@@ -1,0 +1,26 @@
+{
+  "RoleDetailList": [
+    {
+      "RoleName": "developer-role",
+      "RolePolicyList": [
+        {
+          "PolicyDocument": {
+            "Statement": [
+              {
+                "Action": "iam:PassRole",
+                "Resource": "arn:aws:iam::123456789012:role/admin-role"
+              }
+            ]
+          }
+        }
+      ],
+      "AssumeRolePolicyDocument": {
+        "Statement": [
+          {
+            "Principal": "*"
+          }
+        ]
+      }
+    }
+  ]
+}

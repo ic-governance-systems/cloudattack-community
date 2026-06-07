@@ -1,0 +1,33 @@
+{
+  "RoleDetailList": [
+    {
+      "RoleName": "developer-role",
+      "RolePolicyList": [
+        {
+          "PolicyDocument": {
+            "Statement": [
+              {
+                "Action": "iam:PassRole",
+                "Resource": "arn:aws:iam::000000000000:role/lambda-role"
+              }
+            ]
+          }
+        }
+      ],
+      "AssumeRolePolicyDocument": {
+        "Statement": []
+      }
+    },
+    {
+      "RoleName": "lambda-role",
+      "RolePolicyList": [],
+      "AssumeRolePolicyDocument": {
+        "Statement": [
+          {
+            "Principal": "arn:aws:iam::123456789012:root"
+          }
+        ]
+      }
+    }
+  ]
+}
