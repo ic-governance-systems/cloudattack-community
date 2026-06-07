@@ -1,4 +1,8 @@
+```markdown
+![GitHub stars](https://img.shields.io/github/stars/ic-governance-systems/cloudattack-community)
+
 # CloudAttack Community Edition
+
 
 ### Identify AWS IAM privilege escalation paths before attackers do.
 
@@ -23,10 +27,17 @@ CloudAttack helps security teams, DevOps engineers, and cloud practitioners dete
 
 ---
 
-## Usage
+## ⚡ Quick Start
 
 ```bash
 cloudattack scan --input examples/iam.json
+```
+
+## Example file
+
+Use the provided example:
+```
+examples/iam.json
 ```
 ## Example output
 
