@@ -1,5 +1,7 @@
 ```markdown
-![GitHub stars](https://img.shields.io/github/stars/ic-governance-systems/cloudattack-community)
+![Stylized badge indicating GitHub stars for the ic-governance-systems cloudattack-community repository](https://img.shields.io/github/stars/ic-governance-systems/cloudattack-community)
+
+```
 
 # CloudAttack Community Edition
 
