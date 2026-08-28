@@ -1,0 +1,59 @@
+name: CloudAttack Community
+description: Analyze an AWS IAM Terraform plan with the CloudAttack Community CLI
+
+inputs:
+  terraform-plan:
+    description: Path to Terraform plan JSON produced by terraform show -json
+    required: true
+  fail-on:
+    description: Severity threshold that causes the action to fail
+    required: false
+    default: high
+  format:
+    description: Report format written to the workspace (text, json, or sarif)
+    required: false
+    default: sarif
+
+outputs:
+  report-file:
+    description: Path to the generated CloudAttack report
+    value: ${{ steps.scan.outputs.report_file }}
+  exit-code:
+    description: Original CloudAttack CLI exit code
+    value: ${{ steps.scan.outputs.exit_code }}
+
+runs:
+  using: composite
+  steps:
+    - name: Build CloudAttack CLI
+      shell: bash
+      run: |
+        set -euo pipefail
+        cd "$GITHUB_ACTION_PATH"
+        go build -trimpath -o "$RUNNER_TEMP/cloudattack-community" ./cmd/cloudattack
+
+    - name: Run CloudAttack
+      id: scan
+      shell: bash
+      env:
+        PLAN_PATH: ${{ inputs.terraform-plan }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        FORMAT: ${{ inputs.format }}
+      run: |
+        set -u
+        case "$FORMAT" in
+          text)  report_file="$GITHUB_WORKSPACE/cloudattack.txt" ;;
+          json)  report_file="$GITHUB_WORKSPACE/cloudattack.json" ;;
+          sarif) report_file="$GITHUB_WORKSPACE/cloudattack.sarif" ;;
+          *)     report_file="$GITHUB_WORKSPACE/cloudattack.invalid" ;;
+        esac
+
+        set +e
+        "$RUNNER_TEMP/cloudattack-community" scan \
+          --terraform-plan "$PLAN_PATH" \
+          --format "$FORMAT" \
+          --fail-on "$FAIL_ON" > "$report_file"
+        status=$?
+        echo "report_file=$report_file" >> "$GITHUB_OUTPUT"
+        echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+        exit "$status"

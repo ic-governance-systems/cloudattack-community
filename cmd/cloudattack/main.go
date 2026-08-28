@@ -1,7 +1,11 @@
 package main
 
-import "cloudattack-community/internal/cli"
+import (
+	"os"
+
+	"cloudattack-community/internal/cli"
+)
 
 func main() {
-	cli.Execute()
+	os.Exit(cli.Execute())
 }

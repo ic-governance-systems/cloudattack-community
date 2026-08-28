@@ -8,9 +8,15 @@ import (
 )
 
 func FromFindings(findings []models.Finding) models.Report {
+	return FromFindingsWithSource(findings, "aws-iam-json")
+}
+
+// FromFindingsWithSource builds the internal report with its input source metadata.
+func FromFindingsWithSource(findings []models.Finding, sourceType string) models.Report {
 	return models.Report{
-		Summary:  fmt.Sprintf("%d issues found", len(findings)),
-		Findings: findings,
+		Summary:    fmt.Sprintf("%d issues found", len(findings)),
+		Findings:   findings,
+		SourceType: sourceType,
 	}
 }
 
@@ -40,6 +46,21 @@ func ToText(report models.Report) string {
 	b.WriteString("  Advanced attack-path simulation, multi-step privilege escalation analysis, and blast radius insights are available in the full platform.\n")
 
 	return b.String()
+}
+
+// Render produces the requested report format. Additional formats can be
+// added here without changing scan execution or report construction.
+func Render(report models.Report, format string) (string, error) {
+	switch strings.ToLower(format) {
+	case "text":
+		return ToText(report), nil
+	case "json":
+		return ToJSON(report)
+	case "sarif":
+		return ToSARIF(report)
+	default:
+		return "", fmt.Errorf("unsupported format %q (supported formats: text, json, sarif)", format)
+	}
 }
 
 func formatPath(path []string) string {

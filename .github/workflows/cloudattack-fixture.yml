@@ -1,0 +1,102 @@
+name: CloudAttack dogfood
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  safe-plan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Run CloudAttack against deterministic fixture
+        id: cloudattack-safe
+        uses: ./
+        with:
+          terraform-plan: internal/input/testdata/safe-role.json
+          fail-on: high
+          format: sarif
+
+      - name: Upload safe report artifact
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudattack-safe-report
+          path: cloudattack.sarif
+
+  threshold-failure:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Run CloudAttack threshold scenario
+        id: cloudattack-threshold
+        continue-on-error: true
+        uses: ./
+        with:
+          terraform-plan: internal/input/testdata/findings.json
+          fail-on: high
+          format: sarif
+
+      - name: Preserve threshold SARIF report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudattack-threshold-report
+          path: cloudattack.sarif
+
+      - name: Upload threshold SARIF to GitHub code scanning
+        if: ${{ always() }}
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: cloudattack.sarif
+        continue-on-error: true
+
+      - name: Verify threshold failure was recorded
+        if: ${{ always() }}
+        env:
+          CLOUDATTACK_EXIT_CODE: ${{ steps.cloudattack-threshold.outputs.exit-code }}
+        run: |
+          test "$CLOUDATTACK_EXIT_CODE" = "1"
+          echo "CloudAttack correctly reported a security threshold failure"
+          exit 1
+
+  analysis-error:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Run CloudAttack analysis-error scenario
+        id: cloudattack-error
+        continue-on-error: true
+        uses: ./
+        with:
+          terraform-plan: internal/input/testdata/malformed.json
+          fail-on: high
+          format: sarif
+
+      - name: Preserve analysis-error report artifact
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudattack-analysis-error-report
+          path: cloudattack.sarif
+          if-no-files-found: ignore
+
+      - name: Verify analysis error is distinct from a finding
+        if: ${{ always() }}
+        env:
+          CLOUDATTACK_EXIT_CODE: ${{ steps.cloudattack-error.outputs.exit-code }}
+        run: |
+          test "$CLOUDATTACK_EXIT_CODE" = "2"
+          test ! -s cloudattack.sarif
+          echo "CloudAttack correctly reported an analysis error without a successful report"
