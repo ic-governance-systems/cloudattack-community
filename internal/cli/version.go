@@ -1,8 +1,12 @@
 package cli
 
-import "fmt"
+import (
+	"fmt"
 
-const Version = "0.1.0"
+	"cloudattack-community/internal/version"
+)
+
+const Version = version.Current
 
 func runVersion() {
 	fmt.Println("cloudattack version", Version)

@@ -1,0 +1,7 @@
+{
+  "format_version": "1.2",
+  "resource_changes": [
+    {"address": "aws_s3_bucket.logs", "type": "aws_s3_bucket", "change": {"actions": ["create"], "after": {"bucket": "logs"}, "after_unknown": {}}},
+    {"address": "aws_instance.web", "type": "aws_instance", "change": {"actions": ["create"], "after": {"ami": "ami-example"}, "after_unknown": {}}}
+  ]
+}

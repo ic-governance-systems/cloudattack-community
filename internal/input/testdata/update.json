@@ -1,0 +1,15 @@
+{
+  "format_version": "1.2",
+  "resource_changes": [
+    {
+      "address": "aws_iam_role.updated",
+      "type": "aws_iam_role",
+      "change": {
+        "actions": ["update"],
+        "before": {"name": "updated-role", "assume_role_policy": "{\"Statement\":[]}"},
+        "after": {"name": "updated-role", "assume_role_policy": "{\"Statement\":[{\"Principal\":\"*\"}]}"},
+        "after_unknown": {}
+      }
+    }
+  ]
+}

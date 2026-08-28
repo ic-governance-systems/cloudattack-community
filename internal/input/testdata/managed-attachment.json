@@ -1,0 +1,20 @@
+{
+  "format_version": "1.2",
+  "resource_changes": [
+    {
+      "address": "aws_iam_role.managed",
+      "type": "aws_iam_role",
+      "change": {"actions": ["create"], "after": {"name": "managed-role", "assume_role_policy": "{\"Statement\":[]}"}, "after_unknown": {}}
+    },
+    {
+      "address": "aws_iam_policy.passrole",
+      "type": "aws_iam_policy",
+      "change": {"actions": ["create"], "after": {"arn": "arn:aws:iam::999999999999:policy/passrole", "policy": "{\"Statement\":[{\"Action\":\"iam:PassRole\",\"Resource\":\"*\"}]}"}, "after_unknown": {}}
+    },
+    {
+      "address": "aws_iam_role_policy_attachment.managed",
+      "type": "aws_iam_role_policy_attachment",
+      "change": {"actions": ["create"], "after": {"role": "managed-role", "policy_arn": "arn:aws:iam::999999999999:policy/passrole"}, "after_unknown": {}}
+    }
+  ]
+}

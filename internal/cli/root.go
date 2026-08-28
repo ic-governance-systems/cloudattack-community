@@ -5,20 +5,22 @@ import (
 	"os"
 )
 
-func Execute() {
+func Execute() int {
 	if len(os.Args) < 2 {
 		printHelp()
-		return
+		return 2
 	}
 
 	switch os.Args[1] {
 	case "scan":
-		runScan(os.Args[2:])
+		return runScan(os.Args[2:])
 	case "version":
 		runVersion()
+		return 0
 	default:
-		fmt.Println("Unknown command:", os.Args[1])
+		fmt.Fprintln(os.Stderr, "Unknown command:", os.Args[1])
 		printHelp()
+		return 2
 	}
 }
 
@@ -27,6 +29,8 @@ func printHelp() {
 	fmt.Println()
 	fmt.Println("Usage:")
 	fmt.Println("  cloudattack scan --input <file>")
+	fmt.Println("  cloudattack scan --terraform-plan <file>")
+	fmt.Println("  cloudattack scan --input <file> [--format text|json|sarif] [--fail-on <severity>]")
 	fmt.Println("  cloudattack version")
 	fmt.Println()
 }
