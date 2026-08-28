@@ -24,7 +24,7 @@ func DetectPassRole(roles []models.Role) []models.Finding {
 							Severity: "CRITICAL",
 							Title:    "PassRole Risk Detected",
 							Role:     r.Name,
-							Issue:    fmt.Sprintf("Can pass role %s", target),
+							Issue:    fmt.Sprintf("Role can pass iam:PassRole permission to %s", target),
 							Impact:   "May enable privilege escalation into higher privilege role",
 						})
 					}
@@ -56,7 +56,7 @@ func DetectAssumeRole(roles []models.Role) []models.Finding {
 			if t == "*" || t == "arn:aws:iam:::*" {
 				findings = append(findings, models.Finding{
 					Severity: "HIGH",
-					Title:    "Open Trust Policy",
+					Title:    "Overly Permissive Trust Policy",
 					Role:     r.Name,
 					Issue:    "Trusts ANY principal",
 					Impact:   "Any AWS identity may assume this role",
