@@ -1,83 +1,74 @@
-```markdown
-![Stylized badge indicating GitHub stars for the ic-governance-systems cloudattack-community repository](https://img.shields.io/github/stars/ic-governance-systems/cloudattack-community)
-
-```
-
 # CloudAttack Community Edition
 
+## Find dangerous AWS IAM changes before they reach production.
 
-### Identify AWS IAM privilege escalation paths before attackers do.
+CloudAttack Community Edition is an open-source AWS IAM security tool for security, platform, and DevOps teams. It analyses AWS IAM configuration and Terraform plan JSON for risky trust relationships and privilege-escalation patterns. Run it locally or in GitHub Actions as a lightweight CI security gate.
 
-CloudAttack Community Edition is a local-only AWS IAM security analysis tool designed to identify privilege escalation risks, risky trust relationships, and identity misconfigurations directly from IAM JSON files.
+```text
+Terraform plan
+      ↓
+CloudAttack
+      ↓
+IAM security analysis
+      ↓
+PASS / FAIL
+      ↓
+JSON / SARIF / GitHub Actions
+```
 
----
+<!-- Future demo GIF or screenshot: insert here, below the flow and above Quick start. -->
 
-## Why CloudAttack?
+CloudAttack analyses the files you provide. The current supported modes do not require AWS credentials, a CloudAttack account, or an IC Governance Systems service.
 
-AWS IAM misconfigurations can unintentionally create privilege escalation paths and excessive access that attackers can exploit.
+## Quick start
 
-CloudAttack helps security teams, DevOps engineers, and cloud practitioners detect identity risks early—before they become security incidents.
+Build the CLI from this repository:
 
----
+```bash
+go build -o cloudattack ./cmd/cloudattack
+```
 
-## What it detects
-
-* `iam:PassRole` abuse paths
-* External account trust relationships
-* Overly permissive trust policies
-* Simple privilege escalation chains (maximum depth = 2)
-
----
-
-## ⚡ Quick Start
+### A. Scan existing AWS IAM JSON
 
 ```bash
 cloudattack scan --input iam.json
 ```
 
-To make a CI scan fail when a high-severity finding or above is detected:
+The input is an AWS IAM JSON document containing supported role data. See [`examples/iam.json`](examples/iam.json).
 
-```bash
-cloudattack scan --input iam.json --fail-on high
-```
+### B. Scan a Terraform plan
 
-For stable machine-readable output, request the versioned JSON report:
-
-```bash
-cloudattack scan --input iam.json --format json
-```
-
-The JSON report includes tool and scan metadata, severity counts, and structured findings.
-
-For CI and security-tool integration, SARIF 2.1.0 output is also available:
-
-```bash
-cloudattack scan --input iam.json --format sarif
-```
-
-The SARIF report contains CloudAttack rules and results without fabricated source locations.
-
-CloudAttack can also analyse Terraform plan JSON before deployment. Generate the JSON plan with Terraform, then scan it:
+Terraform must produce the plan JSON first; CloudAttack does not execute Terraform.
 
 ```bash
 terraform plan -out=tfplan
 terraform show -json tfplan > tfplan.json
+
 cloudattack scan --terraform-plan tfplan.json
 ```
 
-Terraform plan scans can use the existing machine-readable and CI-gating options:
+### C. Fail CI at a severity threshold
+
+```bash
+cloudattack scan \
+  --terraform-plan tfplan.json \
+  --fail-on high
+```
+
+Supported thresholds are `low`, `medium`, `high`, and `critical`. A finding at or above the selected threshold returns exit code `1`.
+
+### D. Emit JSON or SARIF
 
 ```bash
 cloudattack scan --terraform-plan tfplan.json --format json
 cloudattack scan --terraform-plan tfplan.json --format sarif
-cloudattack scan --terraform-plan tfplan.json --fail-on high
 ```
 
-Phase B4 consumes Terraform plan JSON only; it does not parse raw HCL or run Terraform.
+The default CLI format is text. JSON is a structured report with scan metadata, severity counts, and findings. SARIF output is version 2.1.0.
 
 ## GitHub Actions
 
-CloudAttack provides a lightweight composite Action for Linux GitHub-hosted runners. It builds and invokes the existing CLI against Terraform plan JSON; it does not execute Terraform.
+CloudAttack is a composite Action for Linux GitHub-hosted runners. The Terraform plan JSON must already exist before the Action runs.
 
 ```yaml
 - name: Terraform plan
@@ -92,18 +83,21 @@ CloudAttack provides a lightweight composite Action for Linux GitHub-hosted runn
     fail-on: high
 ```
 
-The Action defaults to `fail-on: high` and `format: sarif`. It writes the selected report to the workspace as `cloudattack.sarif`, `cloudattack.json`, or `cloudattack.txt`, and preserves the CloudAttack exit code: `0` succeeds, `1` indicates a threshold breach, and `2` indicates an invocation, input, analysis, or configuration error.
+The Action builds and invokes the CLI against the supplied Terraform plan. It does not execute Terraform or discover live AWS resources.
 
-When GitHub code scanning is available for the repository, SARIF can be uploaded with GitHub's official integration:
+Action defaults and outputs:
+
+- `fail-on` defaults to `high`.
+- `format` defaults to `sarif`; supported values are `text`, `json`, and `sarif`.
+- The report is written in the workspace as `cloudattack.sarif`, `cloudattack.json`, or `cloudattack.txt`.
+- The `report-file` output identifies the selected report path.
+- Exit code `0` means the scan completed without reaching the threshold; `1` means the threshold was reached; `2` means invocation, input, analysis, or configuration failed.
+
+## SARIF and GitHub code scanning
+
+CloudAttack can emit SARIF 2.1.0. Where GitHub code scanning is available, you can upload the report with GitHub’s own SARIF integration:
 
 ```yaml
-- name: CloudAttack
-  uses: ic-governance-systems/cloudattack-community@v1
-  with:
-    terraform-plan: tfplan.json
-    fail-on: high
-    format: sarif
-
 - name: Upload CloudAttack SARIF
   if: ${{ always() }}
   uses: github/codeql-action/upload-sarif@v3
@@ -112,35 +106,32 @@ When GitHub code scanning is available for the repository, SARIF can be uploaded
   continue-on-error: true
 ```
 
-The `always()` condition allows the SARIF report to remain available when the security threshold fails the Action. Code-scanning availability and required repository permissions vary; configure `security-events: write` where required. The Action runs locally in the GitHub runner, requires no AWS credentials, analyses the supplied Terraform plan JSON, and does not send the plan to an IC Governance Systems service. If you enable GitHub's SARIF/code-scanning upload, the SARIF findings are sent to GitHub through GitHub's own mechanism; GitHub's handling and availability are subject to its repository and account policies.
+Use `if: ${{ always() }}` if the report should remain available when the CloudAttack threshold fails. Code-scanning availability, permissions, and retention depend on the repository and account settings; workflows commonly need `security-events: write`.
 
-The repository's dogfood workflow validates a safe plan, a threshold failure, an analysis error, report artifacts, and the SARIF follow-up path. The threshold scenario intentionally records exit code `1`; the analysis-error scenario expects exit code `2` and no successful report. These scenarios require an actual GitHub-hosted Actions run to validate the runner and GitHub permissions.
+The optional upload sends SARIF findings to GitHub through GitHub’s mechanism. It does not send them to IC Governance Systems.
 
-Current limitations are AWS IAM-focused Terraform plan JSON only, no raw HCL parsing, no live AWS discovery, and no advanced pull-request before/after attack-path diffing. For releases, publish an immutable version tag and maintain a major `v1` tag as the stable Action reference; use a full immutable tag or commit when stricter pinning is required.
+## What CloudAttack detects today
 
-The recommended first Action release is `v1.0.0`, followed by a movable `v1` major tag. Release tags are not created automatically by this repository. After review and verification, a maintainer can publish them explicitly:
+| Capability | Community Edition |
+| --- | --- |
+| AWS IAM JSON | Supported |
+| Terraform plan JSON | Supported |
+| `iam:PassRole` risk detection | Supported |
+| External AWS account root trust detection | Supported |
+| Trust for any principal | Supported |
+| Suspicious trust relationships | Supported |
+| Simple one-hop privilege-escalation chains | Supported |
+| Human-readable text output | Supported |
+| JSON output | Supported |
+| SARIF 2.1.0 output | Supported |
+| Severity gating | Supported |
+| GitHub Actions | Supported |
+| Local execution | Supported |
+| AWS credentials required | No |
+| CloudAttack account required | No |
 
-```bash
-git tag -a v1.0.0 -m "CloudAttack Community Action v1.0.0"
-git push origin v1.0.0
-git tag -f v1 v1.0.0
-git push origin v1 --force
-```
+The chain analysis is deliberately Community-bounded: it identifies a role that can pass another role which has trust relationships. It is not a deep or exhaustive attack graph.
 
-Security-sensitive workflows should pin the full release tag or commit SHA instead of a movable major tag.
-
-The scan uses the human-readable text format by default. The exit codes are:
-
-* `0` — scan completed and no finding reached the configured `--fail-on` threshold (or no threshold was supplied)
-* `1` — scan completed and at least one finding reached or exceeded the configured threshold
-* `2` — invalid CLI arguments, invalid input, or another scan execution failure
-
-## Example file
-
-Use the provided example:
-```
-examples/iam.json
-```
 ## Example output
 
 ```text
@@ -152,7 +143,7 @@ Role:
   developer-role
 
 Issue:
-  Can pass role admin-role
+  Role can pass iam:PassRole permission to admin-role
 
 Impact:
   May enable privilege escalation into higher privilege role
@@ -162,7 +153,7 @@ Path:
 
 ----------------------------------------
 
-[HIGH] Open Trust Policy
+[HIGH] Overly Permissive Trust Policy
 
 Role:
   developer-role
@@ -180,68 +171,64 @@ Path:
 
 Summary:
   2 issues found
-
-Note:
-  This is the Community Edition (local analysis only).
-  Advanced attack-path simulation, multi-step privilege escalation analysis,
-  and blast radius insights are available in the full platform.
 ```
 
-## Local Analysis Only
+## Privacy and security model
 
-CloudAttack Community Edition performs analysis locally.
+- The CLI analyses input files locally.
+- The GitHub Action runs inside the GitHub runner.
+- Current supported modes do not require AWS credentials or a CloudAttack account.
+- CloudAttack does not send scanned IAM or Terraform data to an IC Governance Systems service.
+- If you configure SARIF upload, the findings are sent to GitHub through GitHub’s own integration and are subject to GitHub’s repository and account policies.
 
-* No AWS credentials required
-* No cloud connectivity required
-* CloudAttack runs locally on your machine or in your GitHub runner
-* CloudAttack does not send IAM or Terraform data to an IC Governance Systems service
-* IAM JSON files are analysed directly from disk
+## Supported inputs
 
-## Who Is This For?
+- AWS IAM JSON role data accepted by the IAM parser.
+- Terraform plan JSON produced by `terraform show -json`.
+- Terraform plan scanning currently handles IAM roles, inline role policies, managed IAM policies, role-policy attachments, and policy attachments.
 
-* AWS Security Engineers
-* DevSecOps Engineers
-* Platform Engineers
-* Cloud Security Teams
-* Security Consultants
-* Internal Audit Teams
+Terraform plan JSON is required for Terraform scanning. CloudAttack does not parse raw HCL or run Terraform. If security-critical IAM fields are unsupported, malformed, unknown, or cannot be resolved, analysis can fail explicitly rather than silently passing.
 
-## Download
+## Current limitations
 
-CloudAttack CLI release binaries may be available from the GitHub Releases page when published by maintainers. These are separate from the GitHub Action, which is used from repository release tags; neither CI nor the Action automatically publishes releases.
+CloudAttack Community Edition is intentionally focused:
 
-### Linux
+- AWS IAM only.
+- Terraform plan JSON only; no raw HCL parsing.
+- No Terraform execution.
+- No live AWS discovery and no AWS credentials.
+- No Azure or GCP support.
+- No SaaS or cloud-telemetry analysis.
+- No deep recursive or commercial attack-graph traversal.
+- No blast-radius analysis.
+- No remediation or remediation simulation.
+- No sophisticated before/after pull-request risk diff.
+- Unsupported or unresolvable security-critical Terraform IAM data may fail analysis instead of silently passing.
+
+These boundaries describe the current Community implementation; they are not a claim of complete IAM security coverage.
+
+## Community and advanced platform boundary
+
+Community focuses on local AWS IAM and CI security analysis. A broader platform may provide capabilities such as richer attack-path analysis, remediation and risk intelligence, multi-account or multi-cloud workflows, and enterprise operations. This repository documents the Community boundary only.
+
+## Releases and version pinning
+
+For GitHub Actions, use:
+
+- `@v1` for major-version-compatible usage.
+- `@v1.0.0` for an immutable semantic release tag.
+- A full commit SHA when security-sensitive workflows require immutable source pinning.
+
+This repository currently has `v1` and `v1.0.0` tags. Release tags are maintained explicitly; release automation is not implied. CLI binaries should only be used when a maintainer has actually published them on the repository’s Releases page.
+
+## Contributing
+
+Changes should preserve the Community scope and include tests for behavior changes. Run:
 
 ```bash
-tar -xzf cloudattack_linux_amd64.tar.gz
-./cloudattack scan --input iam.json
+go test ./...
+git diff --check
 ```
-
-### Windows
-
-```powershell
-cloudattack.exe scan --input iam.json
-```
-
-## Community Edition Scope
-
-CloudAttack Community Edition focuses on local AWS IAM analysis and common identity risks.
-
-Current capabilities include:
-
-* IAM JSON analysis
-* PassRole risk detection
-* Trust relationship analysis
-* Simple privilege escalation path detection
-* Local execution with no cloud connectivity
-
-## Future Platform
-
-CloudAttack Community focuses on local AWS IAM analysis and Terraform plan inspection. Additional advanced capabilities may be reserved for a future full platform.
-
-## Disclaimer
-
-CloudAttack is intended for defensive security analysis and educational purposes only.
 
 ## License
 

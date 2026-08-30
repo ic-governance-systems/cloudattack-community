@@ -1,12 +1,12 @@
 name: CloudAttack Community
-description: Analyze an AWS IAM Terraform plan with the CloudAttack Community CLI
+description: Find risky AWS IAM relationships and privilege-escalation patterns in a Terraform plan
 
 inputs:
   terraform-plan:
-    description: Path to Terraform plan JSON produced by terraform show -json
+    description: Path to an existing Terraform plan JSON file produced by terraform show -json
     required: true
   fail-on:
-    description: Severity threshold that causes the action to fail
+    description: Finding severity threshold that causes the action to exit with failure
     required: false
     default: high
   format:
