@@ -1,21 +1,210 @@
-MIT License
+CloudAttack Community License
+Version 1.0 — 2026
 
 Copyright (c) 2026 IC Governance Systems Ltd
+All rights reserved except as expressly granted below.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+1. Definitions
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+"Software" means the CloudAttack Community Edition software, source code,
+documentation, configuration, examples, and associated materials distributed
+under this licence.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+"Licensor" means IC Governance Systems Ltd.
+
+"Internal Use" means use of the Software by an individual or organisation for
+its own internal business, development, security, testing, research, education,
+or CI/CD purposes, and not primarily for providing the Software or its
+functionality to third parties for commercial consideration.
+
+"Commercial Service" means a product, service, managed service, hosted service,
+software-as-a-service offering, consultancy platform, security platform, OEM
+offering, or other commercial offering in which the Software or a substantial
+part of its functionality is made available to, operated for, or redistributed
+to third parties.
+
+2. Licence Grant
+
+Subject to the terms of this licence, the Licensor grants you a worldwide,
+non-exclusive, non-transferable, royalty-free licence to:
+
+a. use the Software for personal purposes;
+
+b. use the Software for Internal Use within an organisation;
+
+c. use the Software in internal CI/CD, DevSecOps, cloud-security, development,
+   testing, and security-review workflows;
+
+d. evaluate the Software;
+
+e. use the Software for research and education;
+
+f. copy the Software as reasonably necessary for the above purposes; and
+
+g. modify the Software for your own Internal Use.
+
+No separate commercial licence is required merely because the organisation
+using the Software is a commercial or for-profit organisation, provided that
+the Software is being used for that organisation's own Internal Use.
+
+3. Permitted Internal CI/CD Use
+
+You may use CloudAttack Community Edition without charge in private or public
+software-development pipelines, including GitHub Actions and other CI/CD
+systems, to analyse infrastructure or security configuration belonging to you
+or your organisation.
+
+This permission includes use by employees and contractors acting on behalf of
+the same organisation for its Internal Use.
+
+4. Restrictions
+
+Without a separate written commercial licence from IC Governance Systems Ltd,
+you may not:
+
+a. sell, sublicense, rent, lease, or commercially redistribute the Software;
+
+b. white-label, rebrand, or commercially offer the Software as your own
+   product or service;
+
+c. provide the Software, or substantially equivalent functionality derived
+   from the Software, as a hosted or managed commercial service to third
+   parties;
+
+d. incorporate the Software or a substantial portion of it into a competing
+   commercial cloud-security, IAM-security, CIEM, DevSecOps-security, or
+   security-analysis product offered to third parties;
+
+e. use the Software as the principal technology for a paid service where
+   customers are charged specifically for access to, or analysis performed
+   substantially by, the Software;
+
+f. remove or alter copyright, licence, attribution, or proprietary notices;
+
+g. represent that IC Governance Systems Ltd endorses, certifies, supports, or
+   is affiliated with a modified or redistributed version unless authorised in
+   writing.
+
+5. Consultancy and Professional Services
+
+A consultant, contractor, managed service provider, or professional-services
+organisation may use the Software internally to support its own development,
+testing, or security operations.
+
+Use of the Software to perform analysis directly for paying third-party clients,
+where CloudAttack forms a material part of the paid deliverable or service,
+requires a separate commercial licence from IC Governance Systems Ltd.
+
+This restriction does not prevent incidental use of general knowledge,
+techniques, or independently produced analysis.
+
+6. Modifications
+
+You may modify the Software for Internal Use.
+
+You may submit modifications to the official CloudAttack project as
+contributions, subject to the project's contribution terms.
+
+This licence does not grant the right to commercially redistribute modified
+versions of the Software.
+
+7. Commercial Licensing
+
+Commercial licences may be available for activities including:
+
+- OEM embedding;
+- commercial redistribution;
+- white-labelling;
+- managed security services;
+- consulting use for third-party customer assessments;
+- hosted services;
+- integration into commercial security products; and
+- other commercial uses not permitted under this Community Licence.
+
+For commercial licensing enquiries, contact IC Governance Systems Ltd through
+the official project or company contact details.
+
+8. Ownership
+
+The Software is licensed, not sold.
+
+IC Governance Systems Ltd and its licensors retain all right, title, and
+interest in and to the Software, including all intellectual-property rights,
+except for the limited rights expressly granted under this licence.
+
+No patent, trademark, or other intellectual-property rights are granted except
+as expressly stated.
+
+9. Trademarks
+
+This licence does not grant permission to use the names, trademarks, logos, or
+branding of IC Governance Systems Ltd or CloudAttack except as reasonably
+necessary to identify the unmodified Software and provide required attribution.
+
+10. Third-Party Components
+
+Third-party software included with or used by the Software remains subject to
+its respective licence terms.
+
+Where a third-party licence grants rights that cannot lawfully be restricted by
+this licence, the third-party licence governs that component.
+
+11. No Warranty
+
+THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTY OF ANY
+KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, ACCURACY, SECURITY,
+NON-INFRINGEMENT, OR THAT THE SOFTWARE WILL IDENTIFY ALL SECURITY RISKS,
+VULNERABILITIES, MISCONFIGURATIONS, OR ATTACK PATHS.
+
+THE SOFTWARE IS A SECURITY-ANALYSIS AID AND MUST NOT BE RELIED UPON AS THE
+SOLE BASIS FOR SECURITY, COMPLIANCE, RISK, OR DEPLOYMENT DECISIONS.
+
+12. Limitation of Liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, IC GOVERNANCE SYSTEMS LTD, ITS
+DIRECTORS, EMPLOYEES, CONTRIBUTORS, AND LICENSORS SHALL NOT BE LIABLE FOR ANY
+DIRECT, INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY, OR OTHER
+DAMAGES, INCLUDING LOSS OF PROFITS, REVENUE, DATA, BUSINESS, SECURITY,
+GOODWILL, OR SERVICE INTERRUPTION, ARISING FROM OR RELATED TO THE SOFTWARE OR
+ITS USE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+Nothing in this licence excludes or limits liability where such exclusion or
+limitation is prohibited by applicable law.
+
+13. Termination
+
+Your rights under this licence terminate automatically if you materially breach
+its terms and fail to remedy the breach within 30 days after becoming aware of
+it or receiving written notice.
+
+Upon termination, you must cease use and distribution of versions of the
+Software governed by this licence, except where retention is required by law.
+
+14. Versions Previously Released Under Other Licences
+
+Software versions previously released by IC Governance Systems Ltd under the
+MIT License or another licence remain governed by the licence applicable to
+those versions.
+
+This Community Licence does not revoke rights previously granted under an
+earlier licence.
+
+15. Governing Law
+
+This licence is governed by the laws of England and Wales.
+
+The courts of England and Wales shall have jurisdiction over disputes arising
+from or relating to this licence, subject to any mandatory legal rights that
+cannot lawfully be excluded.
+
+16. Entire Licence
+
+This licence constitutes the terms under which the Software is made available
+unless IC Governance Systems Ltd has entered into a separate written agreement
+with you.
+
+A separate commercial agreement may grant additional rights.
+
+CloudAttack Community License Version 1.0
+Copyright (c) 2026 IC Governance Systems Ltd

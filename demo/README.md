@@ -7,6 +7,7 @@ From the repository root, build the CLI once:
 ```bash
 go build -o cloudattack ./cmd/cloudattack
 ```
+![CloudAttack overview](../docs/assets/cloudattack-overview.png)
 
 On Windows, the binary is `cloudattack.exe`; substitute that name in the commands below.
 
@@ -57,11 +58,15 @@ cloudattack scan \
   --fail-on high
 ```
 
+![CloudAttack pipeline security output](../docs/assets/cloudattack-output.png)
+
 The command still exits with code `1`; the finding is emitted in the report before the threshold exit. In GitHub Actions, the repository Action writes this output to `cloudattack.sarif`, which can optionally be uploaded through GitHub's SARIF integration.
 
 ## GitHub Actions context
 
 The existing [CloudAttack dogfood workflow](../.github/workflows/cloudattack-fixture.yml) already demonstrates a safe plan, a threshold failure, SARIF artifact handling, and a distinct analysis error without duplicating infrastructure here. The fixtures in this directory are intended for the shorter local recording and can also be supplied to the same repository Action.
+
+![CloudAttack CI/CD pipeline](../docs/assets/cloudattack-ci-pipeline.png)
 
 ## Demo narrative
 
