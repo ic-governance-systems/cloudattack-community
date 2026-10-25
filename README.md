@@ -2,7 +2,7 @@
 
 ## Find dangerous AWS IAM changes before they reach production.
 
-CloudAttack Community Edition is an open-source AWS IAM security tool for security, platform, and DevOps teams. It analyses AWS IAM configuration and Terraform plan JSON for risky trust relationships and privilege-escalation patterns. Run it locally or in GitHub Actions as a lightweight CI security gate.
+CloudAttack Community Edition is a source-available AWS IAM security tool distributed under the [CloudAttack Community License](LICENSE). It analyses AWS IAM configuration and Terraform plan JSON for risky trust relationships and privilege-escalation patterns. Run it locally or in GitHub Actions as a lightweight CI security gate.
 
 ```text
 Terraform plan
@@ -230,6 +230,12 @@ go test ./...
 git diff --check
 ```
 
-## License
+## Licence
 
-MIT License © IC Governance Systems Ltd
+CloudAttack Community Edition is distributed under the [CloudAttack Community License, version 1.0](LICENSE). That licence grants royalty-free personal and internal organisational use, including internal CI/CD, plus evaluation, research and education, subject to its terms. It does not grant unrestricted commercial-use rights.
+
+The licence restricts commercial redistribution, white-labelling, hosted or managed commercial services for third parties, incorporation of the Software or a substantial portion into competing commercial security products offered to third parties, and certain paid third-party client assessments. Separate written commercial permission is required for those activities. See the licence for the exact terms; this summary does not expand or replace it.
+
+The licence permits internal use by a commercial organisation without a separate commercial licence when the use is for that organisation’s own internal purposes. A consultant or service provider may use CloudAttack for its own internal operations, but analysis directly for paying clients where CloudAttack is a material part of the deliverable or service requires separate written commercial permission. If a proposed use does not clearly fit these terms, seek owner/legal review before relying on it.
+
+This custom licence is source-available and includes field-of-use restrictions; do not describe this release as OSI-defined open-source software. Versions previously released under MIT or another licence remain governed by their applicable earlier licence, as described in section 14 of `LICENSE`.
