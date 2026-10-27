@@ -79,6 +79,15 @@ func ParseTerraformPlan(data []byte) (models.TerraformPlan, error) {
 		if err != nil {
 			return models.TerraformPlan{}, err
 		}
+		if change.Mode == "data" {
+			if err := validateTerraformActionSet(change.Actions); err != nil {
+				return models.TerraformPlan{}, fmt.Errorf("Terraform data resource %q: %w", change.Address, err)
+			}
+			// Data-source results are not managed IAM configuration changes. In
+			// particular, a deferred read must not be interpreted as an absent
+			// managed resource or policy.
+			continue
+		}
 		if !isSupportedTerraformType(change.Type) {
 			continue
 		}
@@ -90,7 +99,7 @@ func ParseTerraformPlan(data []byte) (models.TerraformPlan, error) {
 			return models.TerraformPlan{}, fmt.Errorf("Terraform resource %q: %w", change.Address, err)
 		}
 		meta := models.TerraformResourceChange{
-			Address: change.Address, PreviousAddress: change.PreviousAddress, Type: change.Type, Actions: change.Actions,
+			Address: change.Address, PreviousAddress: change.PreviousAddress, Mode: effectiveTerraformMode(change.Mode), Type: change.Type, Actions: change.Actions,
 			BeforePresent: beforePresent, AfterPresent: afterPresent,
 			BeforeKnown: !beforePresent, AfterKnown: !afterPresent,
 		}
@@ -137,6 +146,7 @@ func ParseTerraformPlan(data []byte) (models.TerraformPlan, error) {
 type terraformResourceChange struct {
 	Address         string
 	PreviousAddress string
+	Mode            string
 	Type            string
 	Actions         []string
 	Before          map[string]json.RawMessage
@@ -171,6 +181,31 @@ func statePresence(actions []string) (before, after bool, err error) {
 		return true, true, nil
 	}
 	return false, false, fmt.Errorf("unsupported actions %q", actions)
+}
+
+// validateTerraformActionSet recognizes Terraform's documented resource
+// change actions. It is used for data resources, whose reads are deliberately
+// excluded from managed IAM state attribution.
+func validateTerraformActionSet(actions []string) error {
+	if len(actions) == 1 {
+		switch actions[0] {
+		case "no-op", "create", "read", "update", "delete":
+			return nil
+		}
+	}
+	if len(actions) == 2 && ((actions[0] == "delete" && actions[1] == "create") || (actions[0] == "create" && actions[1] == "delete")) {
+		return nil
+	}
+	return fmt.Errorf("unsupported actions %q", actions)
+}
+
+func effectiveTerraformMode(mode string) string {
+	if mode == "" {
+		// Older CloudAttack fixtures and callers omitted mode. For the supported
+		// IAM resource subset, retain the historical managed-resource behavior.
+		return "managed"
+	}
+	return mode
 }
 
 func containsAction(actions []string, wanted string) bool {
@@ -443,6 +478,11 @@ func decodeResourceChange(raw json.RawMessage, index int) (terraformResourceChan
 	}
 	if change.Address == "" {
 		return terraformResourceChange{}, fmt.Errorf("Terraform resource_changes[%d] address must not be empty", index)
+	}
+	if modeRaw, ok := object["mode"]; ok {
+		if err := json.Unmarshal(modeRaw, &change.Mode); err != nil || (change.Mode != "managed" && change.Mode != "data") {
+			return terraformResourceChange{}, fmt.Errorf("Terraform resource %q mode must be \"managed\" or \"data\"", change.Address)
+		}
 	}
 	if previousRaw, ok := object["previous_address"]; ok && string(previousRaw) != "null" {
 		if err := json.Unmarshal(previousRaw, &change.PreviousAddress); err != nil {

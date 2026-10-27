@@ -126,6 +126,108 @@ func TestTerraformMalformedActionsFailClosed(t *testing.T) {
 	}
 }
 
+func TestTerraformDataSourceReadsAreExcludedFromManagedAttribution(t *testing.T) {
+	dataRead := terraformDataChange("read", map[string]interface{}{"arn": "arn:aws:iam::123456789012:policy/example", "policy": passRole}, nil)
+	plan, err := ParseTerraformPlan(planJSON(t, dataRead))
+	if err != nil {
+		t.Fatalf("parse ordinary IAM data-source read: %v", err)
+	}
+	if len(plan.Changes) != 0 || len(plan.BeforeRoles) != 0 || len(plan.AfterRoles) != 0 || len(plan.Uncertainties) != 0 {
+		t.Fatalf("data-source read must not enter managed IAM attribution: %#v", plan)
+	}
+
+	deferredRead := terraformDataChange("read", nil, map[string]interface{}{"policy": true})
+	deferred, err := ParseTerraformPlan(planJSON(t, deferredRead))
+	if err != nil {
+		t.Fatalf("parse deferred IAM data-source read: %v", err)
+	}
+	if len(deferred.Changes) != 0 || len(deferred.Uncertainties) != 0 {
+		t.Fatalf("deferred data-source values must not be treated as managed-state absence or uncertainty: %#v", deferred)
+	}
+}
+
+func TestTerraformDataReadMixedWithManagedUnknownKeepsFailClosedFinding(t *testing.T) {
+	role := roleChange("no-op", roleState("app", roleSafe), roleState("app", roleSafe))
+	policy := stateChange("aws_iam_role_policy.permissions", "aws_iam_role_policy", "create", nil,
+		map[string]interface{}{"role": "app"}, map[string]interface{}{"after_unknown": map[string]interface{}{"policy": true}})
+	dataRead := terraformDataChange("read", nil, map[string]interface{}{"policy": true})
+	plan, err := ParseTerraformPlan(planJSON(t, dataRead, role, policy))
+	if err != nil {
+		t.Fatalf("parse mixed data/managed plan: %v", err)
+	}
+	if len(plan.Changes) != 2 {
+		t.Fatalf("expected only two managed changes, got %#v", plan.Changes)
+	}
+	for _, change := range plan.Changes {
+		if change.Mode != "managed" {
+			t.Errorf("expected retained changes to be managed, got %#v", change)
+		}
+	}
+	findings := detector.RunTerraformAnalysis(plan)
+	detector.AssignFindingIdentities(findings, plan)
+	var foundUnknown bool
+	for _, finding := range findings {
+		if finding.ChangeClassification == models.ChangeUnknown && finding.ResourceAddress == "aws_iam_role_policy.permissions" && finding.FindingID != "" {
+			foundUnknown = true
+		}
+	}
+	if !foundUnknown {
+		t.Fatalf("unknown managed IAM context must remain a fail-closed finding, got %#v", findings)
+	}
+}
+
+func TestTerraformDataReadDoesNotChangeManagedFindingIdentity(t *testing.T) {
+	role := roleChange("no-op", roleState("app", roleSafe), roleState("app", roleSafe))
+	policy := inlineChange("create", nil, inlineState("app", passRole))
+	withoutData, err := ParseTerraformPlan(planJSON(t, role, policy))
+	if err != nil {
+		t.Fatal(err)
+	}
+	withData, err := ParseTerraformPlan(planJSON(t, terraformDataChange("read", nil, map[string]interface{}{"policy": true}), role, policy))
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseFindings := detector.RunTerraformAnalysis(withoutData)
+	detector.AssignFindingIdentities(baseFindings, withoutData)
+	withDataFindings := detector.RunTerraformAnalysis(withData)
+	detector.AssignFindingIdentities(withDataFindings, withData)
+	if len(baseFindings) != len(withDataFindings) {
+		t.Fatalf("data-source read changed findings: base=%#v with-data=%#v", baseFindings, withDataFindings)
+	}
+	for i := range baseFindings {
+		if baseFindings[i].RuleID != withDataFindings[i].RuleID || baseFindings[i].FindingID != withDataFindings[i].FindingID || baseFindings[i].ChangeClassification != withDataFindings[i].ChangeClassification {
+			t.Fatalf("data-source read changed P1-P3 finding identity/classification: base=%#v with-data=%#v", baseFindings[i], withDataFindings[i])
+		}
+	}
+}
+
+func TestTerraformModeAndManagedActionsAreValidated(t *testing.T) {
+	for _, change := range []map[string]interface{}{
+		{"address": "aws_iam_role.read", "mode": "managed", "type": "aws_iam_role", "change": map[string]interface{}{"actions": []string{"read"}}},
+		{"address": "aws_iam_role.bad", "mode": "managed", "type": "aws_iam_role", "change": map[string]interface{}{"actions": []string{"forget"}}},
+		{"address": "data.aws_iam_policy.bad", "mode": "mystery", "type": "aws_iam_policy", "change": map[string]interface{}{"actions": []string{"read"}}},
+	} {
+		if _, err := ParseTerraformPlan(planJSON(t, change)); err == nil {
+			t.Errorf("expected invalid mode/action to fail for %#v", change)
+		}
+	}
+
+	// Missing mode remains compatible with the repository's historical plans.
+	plan, err := ParseTerraformPlan(planJSON(t, roleChange("no-op", roleState("app", roleSafe), roleState("app", roleSafe))))
+	if err != nil {
+		t.Fatalf("legacy plan without mode should parse: %v", err)
+	}
+	if len(plan.Changes) != 1 || plan.Changes[0].Mode != "managed" {
+		t.Fatalf("legacy IAM change should be normalized to managed mode: %#v", plan.Changes)
+	}
+}
+
+func terraformDataChange(action string, after map[string]interface{}, afterUnknown map[string]interface{}) map[string]interface{} {
+	change := stateChange("data.aws_iam_policy.external", "aws_iam_policy", action, nil, after, map[string]interface{}{"after_unknown": afterUnknown})
+	change["mode"] = "data"
+	return change
+}
+
 func TestTerraformUnknownFindingUsesHighSeverity(t *testing.T) {
 	plan := models.TerraformPlan{Uncertainties: []models.TerraformUncertainty{{Address: "aws_iam_role.x", Side: "after", Reason: "unknown test value"}}}
 	findings := detector.RunTerraformAnalysis(plan)

@@ -55,7 +55,7 @@ cloudattack scan \
   --fail-on high
 ```
 
-Supported thresholds are `low`, `medium`, `high`, and `critical`. A finding at or above the selected threshold returns exit code `1`.
+Supported thresholds are `low`, `medium`, `high`, and `critical`. A finding at or above the selected threshold returns exit code `1`. Unknown or incomplete Terraform comparisons also return `1` because they fail closed, even when no threshold is configured; this does not mean CloudAttack proved exploitability or confirmed a high-severity attack.
 
 ### D. Emit JSON or SARIF
 
@@ -106,7 +106,12 @@ Action defaults and outputs:
 - Optional `scan-id`, `repository`, `commit-sha`, `git-ref`, and `pull-request` inputs pass explicit provenance values to the CLI. They default to empty and CloudAttack does not infer them from the runner environment.
 
 For explicit provenance in a workflow, set these inputs from trusted workflow context, for example `repository: ${{ github.repository }}` and `commit-sha: ${{ github.sha }}`. Pull request number and ref can be passed the same way when available; CloudAttack does not select or read those context values on its own.
-- Exit code `0` means the scan completed without reaching the threshold; `1` means the threshold was reached; `2` means invocation, input, analysis, or configuration failed.
+
+Exit codes are consistent for the CLI and Action:
+
+- `0`: the scan completed and no applicable gate failed.
+- `1`: the configured severity threshold was reached, or an unknown/incomplete Terraform comparison triggered fail-closed behavior. This code alone does not mean a risk is confirmed exploitable or that a high-severity finding exists.
+- `2`: invalid arguments, malformed input, or scan/formatting errors prevented a usable report.
 
 ## SARIF and GitHub code scanning
 
@@ -160,6 +165,8 @@ Terraform scans run the supported IAM rules against both `resource_changes.chang
 | `unknown` | A comparison resource/value is missing, unresolved, ambiguous, or conditions prevent a safe comparison. |
 
 CloudAttack does not infer absence from a resource omitted from `resource_changes`. Unknown IAM values, unresolved role/policy attachments, missing before/after context and conditional findings produce high-severity `unknown` results and exit code `1`, including when no `--fail-on` threshold is supplied. Malformed plan or policy input still exits `2`.
+
+Terraform `resource_changes` entries with `mode: "managed"` are eligible for the supported IAM comparison. Entries with `mode: "data"`, including ordinary and deferred `read` actions, are validated against Terraform's recognized action forms and excluded from managed-resource attribution; their unavailable read values do not prove that a managed IAM risk is absent. When `mode` is omitted, CloudAttack treats a recognized IAM resource type as `managed` for compatibility with older plans and existing callers. An explicit mode other than `managed` or `data`, or an unsupported action on a supported managed IAM resource, is a scan error and exits `2`. Unknown fields on a supported managed IAM resource continue to produce unknown findings and fail closed.
 
 With `--fail-on`, introduced, changed, unchanged and unknown findings use their severity; resolved findings are reported but do not fail the threshold gate. Unknown results fail closed independent of the selected severity threshold. Severity describes the risk pattern; classification describes how its plan state changed.
 

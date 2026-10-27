@@ -10,6 +10,7 @@ type TerraformPlan struct {
 type TerraformResourceChange struct {
 	Address         string
 	PreviousAddress string
+	Mode            string
 	Type            string
 	Actions         []string
 	BeforeKnown     bool

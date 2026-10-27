@@ -107,6 +107,40 @@ func TestTerraformPlanWithoutIAMResourcesSucceeds(t *testing.T) {
 	}
 }
 
+func TestTerraformDataSourceReadAndFailureExitCodes(t *testing.T) {
+	dataRead := `{"format_version":"1.2","resource_changes":[{"address":"data.aws_iam_policy.external","mode":"data","type":"aws_iam_policy","change":{"actions":["read"],"before":null,"after":null,"after_unknown":{"policy":true}}}]}`
+	dataReadFile := writeScanInput(t, dataRead)
+	var exitCode int
+	output := captureStdout(t, func() {
+		exitCode = runScan([]string{"--terraform-plan", dataReadFile, "--format", "json"})
+	})
+	if exitCode != 0 {
+		t.Fatalf("valid deferred data-source read should not fail parsing, got exit %d", exitCode)
+	}
+	var report formatter.JSONReport
+	if err := json.Unmarshal([]byte(output), &report); err != nil {
+		t.Fatalf("parse report for data-source read: %v", err)
+	}
+	if len(report.Findings) != 0 {
+		t.Fatalf("data-source reads are outside managed IAM attribution, got findings %#v", report.Findings)
+	}
+	if report.SchemaVersion != "1.1" || report.Provenance == nil || report.Provenance.ScanID == "" || report.Provenance.Input.ContentDigest == "" {
+		t.Fatalf("data-source handling must preserve the JSON/provenance contract: %#v", report)
+	}
+
+	unknownFile := filepath.Join("..", "input", "testdata", "unknown-critical.json")
+	captureStdout(t, func() { exitCode = runScan([]string{"--terraform-plan", unknownFile, "--format", "json"}) })
+	if exitCode != 1 {
+		t.Fatalf("unknown managed IAM context must fail closed with exit 1, got %d", exitCode)
+	}
+
+	malformedFile := writeScanInput(t, "{not-json")
+	captureStdout(t, func() { exitCode = runScan([]string{"--terraform-plan", malformedFile, "--format", "json"}) })
+	if exitCode != 2 {
+		t.Fatalf("malformed plan input must return exit 2, got %d", exitCode)
+	}
+}
+
 func TestTerraformPlanSupportsAllOutputFormats(t *testing.T) {
 	planFile := filepath.Join("..", "input", "testdata", "findings.json")
 	for _, format := range []string{"text", "json", "sarif"} {
