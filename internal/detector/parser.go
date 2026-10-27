@@ -3,6 +3,7 @@ package detector
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"cloudattack-community/internal/models"
@@ -62,29 +63,20 @@ func ParseIAM(data []byte) ([]models.Role, error) {
 			role.AccountID = extractAccountFromARN(arn)
 		}
 
-		// Parse assume role policy (trust)
-		trusts := []string{}
+		// Keep trust statements intact. Flattening principals loses Effect,
+		// Principal type and conditions, which are needed to interpret trust.
+		trusts := []models.Policy{}
 		if arb, ok := rmap["AssumeRolePolicyDocument"]; ok {
-			var doc map[string]interface{}
-			switch v := arb.(type) {
-			case string:
-				// sometimes it's a JSON-encoded string
-				_ = json.Unmarshal([]byte(v), &doc)
-			case map[string]interface{}:
-				doc = v
+			doc, err := decodePolicyDocument(arb)
+			if err != nil {
+				return nil, fmt.Errorf("role %q trust policy: %w", role.Name, err)
 			}
-
-			if doc != nil {
-				stmts := normalizeStatements(doc["Statement"])
-				for _, s := range stmts {
-					if p := extractPrincipalsFromStatement(s); len(p) > 0 {
-						trusts = append(trusts, p...)
-					}
-				}
+			trusts, err = parseStatements(doc["Statement"], true)
+			if err != nil {
+				return nil, fmt.Errorf("role %q trust policy: %w", role.Name, err)
 			}
 		}
-		// dedupe trusts
-		role.Trust = uniqueStrings(trusts)
+		role.Trust = trusts
 
 		// Parse inline policies (RolePolicyList)
 		policies := []models.Policy{}
@@ -94,28 +86,16 @@ func ParseIAM(data []byte) ([]models.Role, error) {
 				if !ok {
 					continue
 				}
-				var doc map[string]interface{}
 				if pd, ok := pmap["PolicyDocument"]; ok {
-					switch v := pd.(type) {
-					case string:
-						_ = json.Unmarshal([]byte(v), &doc)
-					case map[string]interface{}:
-						doc = v
+					doc, err := decodePolicyDocument(pd)
+					if err != nil {
+						return nil, fmt.Errorf("role %q policy: %w", role.Name, err)
 					}
-				}
-
-				if doc == nil {
-					continue
-				}
-
-				stmts := normalizeStatements(doc["Statement"])
-				for _, s := range stmts {
-					actions := toStringSlice(s["Action"])
-					resources := toStringSlice(s["Resource"])
-					if len(actions) == 0 && len(resources) == 0 {
-						continue
+					statements, err := parseStatements(doc["Statement"], false)
+					if err != nil {
+						return nil, fmt.Errorf("role %q policy: %w", role.Name, err)
 					}
-					policies = append(policies, models.Policy{Actions: actions, Resources: resources})
+					policies = append(policies, statements...)
 				}
 			}
 		}
@@ -155,7 +135,7 @@ func validateRoles(roles []interface{}) error {
 			}
 		}
 		if trust, exists := role["AssumeRolePolicyDocument"]; exists {
-			if err := validatePolicyDocument(trust, fmt.Sprintf("role %d AssumeRolePolicyDocument", i)); err != nil {
+			if err := validatePolicyDocument(trust, fmt.Sprintf("role %d AssumeRolePolicyDocument", i), true); err != nil {
 				return err
 			}
 		}
@@ -173,38 +153,44 @@ func validatePolicies(policies []interface{}, roleIndex int) error {
 		if !exists {
 			return fmt.Errorf("role %d policy %d is missing PolicyDocument", roleIndex, i)
 		}
-		if err := validatePolicyDocument(document, fmt.Sprintf("role %d policy %d PolicyDocument", roleIndex, i)); err != nil {
+		if err := validatePolicyDocument(document, fmt.Sprintf("role %d policy %d PolicyDocument", roleIndex, i), false); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validatePolicyDocument(value interface{}, path string) error {
+func decodePolicyDocument(value interface{}) (map[string]interface{}, error) {
 	var document map[string]interface{}
 	switch typed := value.(type) {
 	case string:
 		if err := json.Unmarshal([]byte(typed), &document); err != nil {
-			return fmt.Errorf("%s contains invalid JSON: %w", path, err)
+			return nil, fmt.Errorf("contains invalid JSON: %w", err)
 		}
 	case map[string]interface{}:
 		document = typed
 	default:
-		return fmt.Errorf("%s must be an object or JSON string", path)
+		return nil, fmt.Errorf("must be an object or JSON string")
 	}
 	if document == nil {
-		return fmt.Errorf("%s must contain a JSON object", path)
+		return nil, fmt.Errorf("must contain a JSON object")
 	}
-
-	if statements, exists := document["Statement"]; exists {
-		if err := validateStatements(statements, path+".Statement"); err != nil {
-			return err
-		}
-	}
-	return nil
+	return document, nil
 }
 
-func validateStatements(value interface{}, path string) error {
+func validatePolicyDocument(value interface{}, path string, trust bool) error {
+	document, err := decodePolicyDocument(value)
+	if err != nil {
+		return fmt.Errorf("%s %w", path, err)
+	}
+	statements, exists := document["Statement"]
+	if !exists {
+		return fmt.Errorf("%s.Statement is required", path)
+	}
+	return validateStatements(statements, path+".Statement", trust)
+}
+
+func validateStatements(value interface{}, path string, trust bool) error {
 	values := []interface{}{value}
 	if list, ok := value.([]interface{}); ok {
 		values = list
@@ -223,13 +209,146 @@ func validateStatements(value interface{}, path string) error {
 		if err := validateStringOrStringArray(statement, "Resource", path, i); err != nil {
 			return err
 		}
+		effect, ok := statement["Effect"].(string)
+		if !ok || (effect != "Allow" && effect != "Deny") {
+			return fmt.Errorf("%s[%d].Effect must be Allow or Deny", path, i)
+		}
+		if _, exists := statement["NotAction"]; exists {
+			return fmt.Errorf("%s[%d].NotAction is unsupported", path, i)
+		}
+		if _, exists := statement["NotResource"]; exists {
+			return fmt.Errorf("%s[%d].NotResource is unsupported", path, i)
+		}
+		if _, exists := statement["NotPrincipal"]; exists {
+			return fmt.Errorf("%s[%d].NotPrincipal is unsupported", path, i)
+		}
+		if _, exists := statement["Action"]; !exists {
+			return fmt.Errorf("%s[%d].Action is required", path, i)
+		}
+		if !trust {
+			if _, exists := statement["Resource"]; !exists {
+				return fmt.Errorf("%s[%d].Resource is required", path, i)
+			}
+			if _, exists := statement["Principal"]; exists {
+				return fmt.Errorf("%s[%d].Principal is unsupported in role identity policies", path, i)
+			}
+		}
 		if principal, exists := statement["Principal"]; exists {
 			if err := validatePrincipal(principal, fmt.Sprintf("%s[%d].Principal", path, i)); err != nil {
+				return err
+			}
+		} else if trust {
+			return fmt.Errorf("%s[%d].Principal is required in a trust policy", path, i)
+		}
+		if condition, exists := statement["Condition"]; exists {
+			if err := validateCondition(condition, fmt.Sprintf("%s[%d].Condition", path, i)); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+func validateCondition(value interface{}, path string) error {
+	operators, ok := value.(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("%s must be an object", path)
+	}
+	for operator, rawEntries := range operators {
+		if operator == "" {
+			return fmt.Errorf("%s contains an empty operator", path)
+		}
+		entries, ok := rawEntries.(map[string]interface{})
+		if !ok || len(entries) == 0 {
+			return fmt.Errorf("%s.%s must be an object", path, operator)
+		}
+		for key, rawValue := range entries {
+			if key == "" || !validConditionValue(rawValue) {
+				return fmt.Errorf("%s.%s.%s has an unsupported value", path, operator, key)
+			}
+		}
+	}
+	return nil
+}
+
+func parseStatements(value interface{}, trust bool) ([]models.Policy, error) {
+	values := []interface{}{value}
+	if list, ok := value.([]interface{}); ok {
+		values = list
+	}
+	statements := make([]models.Policy, 0, len(values))
+	for i, raw := range values {
+		statement, ok := raw.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("Statement[%d] must be an object", i)
+		}
+		policy := models.Policy{
+			Effect:    statement["Effect"].(string),
+			Actions:   toStringSlice(statement["Action"]),
+			Resources: toStringSlice(statement["Resource"]),
+			StatementIndex: i,
+		}
+		if rawCondition, exists := statement["Condition"]; exists {
+			condition := rawCondition.(map[string]interface{})
+			policy.Condition = make(map[string]map[string]interface{}, len(condition))
+			for operator, rawEntries := range condition {
+				entries := rawEntries.(map[string]interface{})
+				policy.Condition[operator] = entries
+			}
+		}
+		if trust {
+			principals, err := parsePrincipals(statement["Principal"])
+			if err != nil {
+				return nil, fmt.Errorf("Statement[%d].Principal: %w", i, err)
+			}
+			policy.Principals = principals
+		}
+		statements = append(statements, policy)
+	}
+	return statements, nil
+}
+
+func parsePrincipals(value interface{}) ([]models.Principal, error) {
+	if direct, ok := value.(string); ok {
+		if strings.HasPrefix(direct, "arn:aws:iam::") || isAccountID(direct) {
+			return []models.Principal{{Type: "AWS", Values: []string{direct}}}, nil
+		}
+		return []models.Principal{{Type: "*", Values: []string{direct}}}, nil
+	}
+	principalMap, ok := value.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("must be a string or object")
+	}
+	types := make([]string, 0, len(principalMap))
+	for principalType := range principalMap {
+		types = append(types, principalType)
+	}
+	sort.Strings(types)
+	principals := make([]models.Principal, 0, len(types))
+	for _, principalType := range types {
+		values := toStringSlice(principalMap[principalType])
+		principals = append(principals, models.Principal{Type: principalType, Values: values})
+	}
+	return principals, nil
+}
+
+func validConditionValue(value interface{}) bool {
+	switch typed := value.(type) {
+	case string, bool, float64:
+		return true
+	case []interface{}:
+		if len(typed) == 0 {
+			return false
+		}
+		for _, item := range typed {
+			if text, ok := item.(string); !ok || text == "" {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
 }
 
 func validateStringOrStringArray(statement map[string]interface{}, field, path string, index int) error {
@@ -239,10 +358,16 @@ func validateStringOrStringArray(statement map[string]interface{}, field, path s
 	}
 	switch typed := value.(type) {
 	case string:
+		if typed == "" {
+			return fmt.Errorf("%s[%d].%s must not be empty", path, index, field)
+		}
 		return nil
 	case []interface{}:
+		if len(typed) == 0 {
+			return fmt.Errorf("%s[%d].%s must not be empty", path, index, field)
+		}
 		for j, item := range typed {
-			if _, ok := item.(string); !ok {
+			if text, ok := item.(string); !ok || text == "" {
 				return fmt.Errorf("%s[%d].%s[%d] must be a string", path, index, field, j)
 			}
 		}
@@ -255,14 +380,26 @@ func validateStringOrStringArray(statement map[string]interface{}, field, path s
 func validatePrincipal(value interface{}, path string) error {
 	switch typed := value.(type) {
 	case string:
+		if typed == "" {
+			return fmt.Errorf("%s must not be empty", path)
+		}
 		return nil
 	case map[string]interface{}:
 		for key, item := range typed {
+			if key == "" {
+				return fmt.Errorf("%s contains an empty principal type", path)
+			}
 			switch principals := item.(type) {
 			case string:
+				if principals == "" {
+					return fmt.Errorf("%s.%s must not be empty", path, key)
+				}
 			case []interface{}:
+				if len(principals) == 0 {
+					return fmt.Errorf("%s.%s must not be empty", path, key)
+				}
 				for i, principal := range principals {
-					if _, ok := principal.(string); !ok {
+					if text, ok := principal.(string); !ok || text == "" {
 						return fmt.Errorf("%s.%s[%d] must be a string", path, key, i)
 					}
 				}
@@ -274,51 +411,6 @@ func validatePrincipal(value interface{}, path string) error {
 	default:
 		return fmt.Errorf("%s must be a string or object", path)
 	}
-}
-
-func normalizeStatements(raw interface{}) []map[string]interface{} {
-	stmts := []map[string]interface{}{}
-	if raw == nil {
-		return stmts
-	}
-	switch s := raw.(type) {
-	case []interface{}:
-		for _, si := range s {
-			if sm, ok := si.(map[string]interface{}); ok {
-				stmts = append(stmts, sm)
-			}
-		}
-	case map[string]interface{}:
-		stmts = append(stmts, s)
-	}
-	return stmts
-}
-
-func extractPrincipalsFromStatement(stmt map[string]interface{}) []string {
-	out := []string{}
-	if stmt == nil {
-		return out
-	}
-	if p, ok := stmt["Principal"]; ok {
-		switch v := p.(type) {
-		case string:
-			out = append(out, v)
-		case map[string]interface{}:
-			for _, val := range v {
-				switch vv := val.(type) {
-				case string:
-					out = append(out, vv)
-				case []interface{}:
-					for _, e := range vv {
-						if s, ok := e.(string); ok {
-							out = append(out, s)
-						}
-					}
-				}
-			}
-		}
-	}
-	return out
 }
 
 func toStringSlice(v interface{}) []string {
@@ -336,21 +428,6 @@ func toStringSlice(v interface{}) []string {
 			if s, ok := e.(string); ok {
 				out = append(out, s)
 			}
-		}
-	}
-	return out
-}
-
-func uniqueStrings(in []string) []string {
-	seen := map[string]struct{}{}
-	out := []string{}
-	for _, s := range in {
-		if s == "" {
-			continue
-		}
-		if _, ok := seen[s]; !ok {
-			seen[s] = struct{}{}
-			out = append(out, s)
 		}
 	}
 	return out

@@ -2,6 +2,8 @@ package cli
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"os"
@@ -22,6 +24,8 @@ func TestRunScanWithInputFile(t *testing.T) {
       "AssumeRolePolicyDocument": {
         "Statement": [
           {
+            "Effect": "Allow",
+            "Action": "sts:AssumeRole",
             "Principal": "arn:aws:iam::123456789012:root"
           }
         ]
@@ -136,13 +140,84 @@ func TestTerraformPlanSupportsAllOutputFormats(t *testing.T) {
 }
 
 func TestUnsupportedTerraformPlanReturnsExitTwo(t *testing.T) {
-	for _, name := range []string{"unsupported.json", "unknown-critical.json"} {
+	for _, name := range []string{"unsupported.json"} {
 		t.Run(name, func(t *testing.T) {
 			planFile := filepath.Join("..", "input", "testdata", name)
 			if exitCode := runScan([]string{"--terraform-plan", planFile, "--format", "json"}); exitCode != 2 {
 				t.Fatalf("expected exit code 2, got %d", exitCode)
 			}
 		})
+	}
+}
+
+func TestUnknownTerraformPlanFailsClosedWithReport(t *testing.T) {
+	planFile := filepath.Join("..", "input", "testdata", "unknown-critical.json")
+	for _, args := range [][]string{
+		{"--terraform-plan", planFile, "--format", "json"},
+		{"--terraform-plan", planFile, "--format", "json", "--fail-on", "critical"},
+	} {
+		var exitCode int
+		output := captureStdout(t, func() { exitCode = runScan(args) })
+		if exitCode != 1 {
+			t.Fatalf("expected incomplete Terraform state to fail closed with exit 1 for %v, got %d", args, exitCode)
+		}
+		var report formatter.JSONReport
+		if err := json.Unmarshal([]byte(output), &report); err != nil {
+			t.Fatalf("parse unknown-state report: %v", err)
+		}
+		if report.Summary.High != 1 || report.Findings[0].ChangeClassification != "unknown" {
+			t.Fatalf("expected visible high severity unknown finding, got %#v", report)
+		}
+	}
+}
+
+func TestTerraformIntroducedFindingUsesSeverityGate(t *testing.T) {
+	planFile := filepath.Join("..", "input", "testdata", "findings.json")
+	var exitCode int
+	output := captureStdout(t, func() {
+		exitCode = runScan([]string{"--terraform-plan", planFile, "--format", "json", "--fail-on", "critical"})
+	})
+	if exitCode != 1 {
+		t.Fatalf("expected introduced critical finding to fail severity gate, got %d", exitCode)
+	}
+	var report formatter.JSONReport
+	if err := json.Unmarshal([]byte(output), &report); err != nil {
+		t.Fatalf("parse report: %v", err)
+	}
+	foundIntroduced := false
+	for _, finding := range report.Findings {
+		if finding.ChangeClassification == "introduced" {
+			foundIntroduced = true
+		}
+	}
+	if !foundIntroduced {
+		t.Fatalf("expected introduced finding in report: %#v", report.Findings)
+	}
+}
+
+func TestTerraformGateKeepsResolvedVisibleWithoutFailing(t *testing.T) {
+	plan := `{"format_version":"1.2","resource_changes":[
+{"address":"aws_iam_role.app","type":"aws_iam_role","change":{"actions":["no-op"],"before":{"name":"app","arn":"arn:aws:iam::123456789012:role/app","assume_role_policy":"{\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"sts:AssumeRole\",\"Principal\":{\"Service\":\"lambda.amazonaws.com\"}}]}"},"after":{"name":"app","arn":"arn:aws:iam::123456789012:role/app","assume_role_policy":"{\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"sts:AssumeRole\",\"Principal\":{\"Service\":\"lambda.amazonaws.com\"}}]}"}}},
+{"address":"aws_iam_role_policy.permissions","type":"aws_iam_role_policy","change":{"actions":["update"],"before":{"role":"app","policy":"{\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"iam:PassRole\",\"Resource\":\"*\"}]}"},"after":{"role":"app","policy":"{\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"s3:GetObject\",\"Resource\":\"arn:aws:s3:::example/*\"}]}"}}}]}`
+	planFile := writeScanInput(t, plan)
+	var exitCode int
+	output := captureStdout(t, func() {
+		exitCode = runScan([]string{"--terraform-plan", planFile, "--format", "json", "--fail-on", "high"})
+	})
+	if exitCode != 0 {
+		t.Fatalf("resolved findings should not fail severity gate, got %d", exitCode)
+	}
+	var report formatter.JSONReport
+	if err := json.Unmarshal([]byte(output), &report); err != nil {
+		t.Fatalf("parse report: %v", err)
+	}
+	if len(report.Findings) == 0 {
+		t.Fatalf("expected resolved finding retained in report: %#v", report.Findings)
+	}
+	for _, finding := range report.Findings {
+		if finding.ChangeClassification != "resolved" {
+			t.Fatalf("expected only resolved findings, got %#v", report.Findings)
+		}
 	}
 }
 
@@ -191,14 +266,17 @@ func TestScanJSONOutputContract(t *testing.T) {
 	if err := json.Unmarshal([]byte(output), &report); err != nil {
 		t.Fatalf("parse JSON output: %v\n%s", err, output)
 	}
-	if report.SchemaVersion != "1.0" {
-		t.Fatalf("expected schema version 1.0, got %q", report.SchemaVersion)
+	if report.SchemaVersion != "1.1" {
+		t.Fatalf("expected schema version 1.1, got %q", report.SchemaVersion)
 	}
 	if report.Tool.Name != "cloudattack" || report.Tool.Edition != "community" || report.Tool.Version != Version {
 		t.Fatalf("unexpected tool metadata: %#v", report.Tool)
 	}
 	if report.Scan.SourceType != "aws-iam-json" {
 		t.Fatalf("unexpected source type: %q", report.Scan.SourceType)
+	}
+	if report.Provenance == nil || report.Provenance.ScanID == "" || report.Provenance.TimestampUTC == "" || report.Provenance.Input.ContentDigest == "" || report.Provenance.Repository != nil {
+		t.Fatalf("expected generated scan provenance without invented repository metadata: %#v", report.Provenance)
 	}
 	if report.Summary != (formatter.JSONSummary{Total: 3, Critical: 1, High: 1, Medium: 1, Low: 0}) {
 		t.Fatalf("unexpected summary: %#v", report.Summary)
@@ -212,6 +290,9 @@ func TestScanJSONOutputContract(t *testing.T) {
 		if finding.ID == "" {
 			t.Fatal("expected stable finding ID")
 		}
+		if finding.RuleID != finding.ID || finding.FindingID == "" || finding.IdentityStatus != "stable" {
+			t.Fatalf("expected separate rule and stable finding identities: %#v", finding)
+		}
 		if finding.Path == nil {
 			t.Fatalf("expected empty path array, got null for %s", finding.ID)
 		}
@@ -223,11 +304,128 @@ func TestScanJSONOutputContract(t *testing.T) {
 	if ids["Overly Permissive Trust Policy"] != "overly-permissive-trust" {
 		t.Fatalf("unexpected trust ID: %q", ids["Overly Permissive Trust Policy"])
 	}
-	if ids["Suspicious Trust Relationship"] != "suspicious-trust-relationship" {
-		t.Fatalf("unexpected suspicious-trust ID: %q", ids["Suspicious Trust Relationship"])
+	if ids["External AWS Principal Trust Relationship"] != "external-aws-principal-trust" {
+		t.Fatalf("unexpected external-principal ID: %q", ids["External AWS Principal Trust Relationship"])
 	}
 	if strings.Contains(output, "CloudAttack Community Edition") || strings.Contains(output, "Advanced attack-path") {
 		t.Fatalf("JSON output contains text report content:\n%s", output)
+	}
+}
+
+func TestScanProvenanceIDsDigestAndOptionalRepository(t *testing.T) {
+	options, err := parseScanOptions([]string{"--input", "input.json", "--scan-id", "caller-42", "--repository", "example/service", "--commit-sha", "0123456789abcdef", "--git-ref", "refs/pull/42/merge", "--pull-request", "42"})
+	if err != nil {
+		t.Fatalf("parse provenance options: %v", err)
+	}
+	raw := []byte("{ \"RoleDetailList\": [] }\n")
+	provenance, err := buildScanProvenance(options, "aws-iam-json", raw)
+	if err != nil {
+		t.Fatalf("build provenance: %v", err)
+	}
+	digest := sha256.Sum256(raw)
+	if provenance.ScanID != "caller-42" || provenance.Input.ContentDigest != hex.EncodeToString(digest[:]) || provenance.Input.DigestScope != "raw-input-bytes" || provenance.Repository == nil || provenance.Repository.CommitSHA != "0123456789abcdef" {
+		t.Fatalf("unexpected provenance: %#v", provenance)
+	}
+	if _, err := parseScanOptions([]string{"--input", "input.json"}); err != nil {
+		t.Fatalf("parse options without repository metadata: %v", err)
+	}
+	without, err := buildScanProvenance(scanOptions{}, "aws-iam-json", raw)
+	if err != nil {
+		t.Fatalf("build provenance without repo: %v", err)
+	}
+	if without.Repository != nil {
+		t.Fatalf("missing repository metadata was invented: %#v", without.Repository)
+	}
+}
+
+func TestScanIDsAreUniqueAndMetadataValidationIsBounded(t *testing.T) {
+	first, err := newScanID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := newScanID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == second || len(first) != 36 || len(second) != 36 {
+		t.Fatalf("expected distinct UUID scan IDs, got %q and %q", first, second)
+	}
+	for _, args := range [][]string{
+		{"--input", "x", "--scan-id", "bad id"},
+		{"--input", "x", "--scan-id", strings.Repeat("a", 129)},
+		{"--input", "x", "--repository", strings.Repeat("r", 257)},
+		{"--input", "x", "--commit-sha", "not-a-sha"},
+		{"--input", "x", "--git-ref", "bad\nref"},
+		{"--input", "x", "--pull-request", "0"},
+	} {
+		if _, err := parseScanOptions(args); err == nil {
+			t.Errorf("expected metadata rejection for %v", args)
+		}
+	}
+}
+
+func TestScanProvenanceDoesNotCollectEnvironment(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "synthetic-secret-do-not-report")
+	t.Setenv("GITHUB_REPOSITORY", "should-not-be-read/repository")
+	provenance, err := buildScanProvenance(scanOptions{}, "aws-iam-json", []byte("{}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(provenance)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "synthetic-secret-do-not-report") || strings.Contains(string(encoded), "should-not-be-read") || provenance.Repository != nil {
+		t.Fatalf("implicit environment provenance was collected: %s", encoded)
+	}
+}
+
+func TestRunScanEmitsExplicitProvenance(t *testing.T) {
+	inputFile := writeScanInput(t, `{"RoleDetailList":[]}`)
+	var exitCode int
+	output := captureStdout(t, func() {
+		exitCode = runScan([]string{"--input", inputFile, "--format", "json", "--scan-id", "build-42", "--repository", "example/service", "--commit-sha", "0123456789abcdef", "--git-ref", "refs/heads/main", "--pull-request", "42"})
+	})
+	if exitCode != 0 {
+		t.Fatalf("scan should pass: %d", exitCode)
+	}
+	var report formatter.JSONReport
+	if err := json.Unmarshal([]byte(output), &report); err != nil {
+		t.Fatalf("parse JSON: %v", err)
+	}
+	if report.Provenance == nil || report.Provenance.ScanID != "build-42" || report.Provenance.Repository == nil || report.Provenance.Repository.Identifier != "example/service" || report.Provenance.Repository.CommitSHA != "0123456789abcdef" || report.Provenance.Repository.GitReference != "refs/heads/main" || report.Provenance.Repository.PullRequest != "42" {
+		t.Fatalf("explicit provenance was not propagated: %#v", report.Provenance)
+	}
+}
+
+func TestDifferentScansAndCommitsKeepLogicalFindingIdentity(t *testing.T) {
+	inputFile := writeScanInput(t, highFindingInput())
+	readReport := func(scanID, commit string) formatter.JSONReport {
+		var exitCode int
+		output := captureStdout(t, func() {
+			exitCode = runScan([]string{"--input", inputFile, "--format", "json", "--scan-id", scanID, "--repository", "example/service", "--commit-sha", commit})
+		})
+		if exitCode != 0 {
+			t.Fatalf("scan %s failed: %d", scanID, exitCode)
+		}
+		var report formatter.JSONReport
+		if err := json.Unmarshal([]byte(output), &report); err != nil {
+			t.Fatalf("parse report: %v", err)
+		}
+		return report
+	}
+	first := readReport("execution-1", "0123456789abcdef")
+	second := readReport("execution-2", "fedcba9876543210")
+	if first.Provenance.ScanID == second.Provenance.ScanID {
+		t.Fatal("separate executions reused the scan ID")
+	}
+	if len(first.Findings) != len(second.Findings) || len(first.Findings) == 0 {
+		t.Fatalf("unexpected findings: %d and %d", len(first.Findings), len(second.Findings))
+	}
+	for i := range first.Findings {
+		if first.Findings[i].FindingID == "" || first.Findings[i].FindingID != second.Findings[i].FindingID {
+			t.Fatalf("commit/scan metadata changed logical finding ID: %#v %#v", first.Findings[i], second.Findings[i])
+		}
 	}
 }
 
@@ -316,7 +514,7 @@ func TestScanSARIFOutputContract(t *testing.T) {
 			t.Fatalf("rule missing metadata: %#v", rule)
 		}
 	}
-	for _, id := range []string{"passrole-risk", "overly-permissive-trust", "suspicious-trust-relationship"} {
+	for _, id := range []string{"passrole-risk", "overly-permissive-trust", "external-aws-principal-trust"} {
 		if !ruleIDs[id] {
 			t.Fatalf("missing SARIF rule %q", id)
 		}
@@ -331,10 +529,10 @@ func TestScanSARIFOutputContract(t *testing.T) {
 			t.Fatalf("result missing required fields: %#v", result)
 		}
 	}
-	if levels["passrole-risk"] != "error" || levels["overly-permissive-trust"] != "error" || levels["suspicious-trust-relationship"] != "warning" {
+	if levels["passrole-risk"] != "error" || levels["overly-permissive-trust"] != "error" || levels["external-aws-principal-trust"] != "warning" {
 		t.Fatalf("unexpected SARIF severity levels: %#v", levels)
 	}
-	if severities["passrole-risk"] != "CRITICAL" || severities["overly-permissive-trust"] != "HIGH" || severities["suspicious-trust-relationship"] != "MEDIUM" {
+	if severities["passrole-risk"] != "CRITICAL" || severities["overly-permissive-trust"] != "HIGH" || severities["external-aws-principal-trust"] != "MEDIUM" {
 		t.Fatalf("unexpected CloudAttack severities: %#v", severities)
 	}
 	if strings.Contains(output, "Community Edition") || strings.Contains(output, "Advanced attack-path") {
@@ -477,26 +675,26 @@ func noFindingInput() string {
 }
 
 func mediumFindingInput() string {
-	return `{"RoleDetailList":[{"RoleName":"role","AssumeRolePolicyDocument":{"Statement":[{"Principal":"arn:aws:iam::123456789012:role/unknown"}]}}]}`
+	return `{"RoleDetailList":[{"RoleName":"role","Arn":"arn:aws:iam::999999999999:role/role","AssumeRolePolicyDocument":{"Statement":[{"Effect":"Allow","Action":"sts:AssumeRole","Principal":{"AWS":"arn:aws:iam::123456789012:role/unknown"}}]}}]}`
 }
 
 func highFindingInput() string {
-	return `{"RoleDetailList":[{"RoleName":"role","Arn":"arn:aws:iam::999999999999:role/role","AssumeRolePolicyDocument":{"Statement":[{"Principal":"*"}]}}]}`
+	return `{"RoleDetailList":[{"RoleName":"role","Arn":"arn:aws:iam::999999999999:role/role","AssumeRolePolicyDocument":{"Statement":[{"Effect":"Allow","Action":"sts:AssumeRole","Principal":"*"}]}}]}`
 }
 
 func criticalFindingInput() string {
-	return `{"RoleDetailList":[{"RoleName":"source","RolePolicyList":[{"PolicyDocument":{"Statement":[{"Action":"iam:PassRole","Resource":"arn:aws:iam::999999999999:role/target"}]}}]}]}`
+	return `{"RoleDetailList":[{"RoleName":"source","RolePolicyList":[{"PolicyDocument":{"Statement":[{"Effect":"Allow","Action":"iam:PassRole","Resource":"arn:aws:iam::999999999999:role/target"}]}}]}]}`
 }
 
 func externalTrustFindingInput() string {
-	return `{"RoleDetailList":[{"RoleName":"developer-role","Arn":"arn:aws:iam::999999999999:role/developer-role","AssumeRolePolicyDocument":{"Statement":[{"Principal":"arn:aws:iam::123456789012:root"}]}}]}`
+	return `{"RoleDetailList":[{"RoleName":"developer-role","Arn":"arn:aws:iam::999999999999:role/developer-role","AssumeRolePolicyDocument":{"Statement":[{"Effect":"Allow","Action":"sts:AssumeRole","Principal":"arn:aws:iam::123456789012:root"}]}}]}`
 }
 
 func mixedFindingsInput() string {
 	return `{"RoleDetailList":[
-  {"RoleName":"source","RolePolicyList":[{"PolicyDocument":{"Statement":[{"Action":"iam:PassRole","Resource":"arn:aws:iam::999999999999:role/missing"}]}}]},
-  {"RoleName":"open","AssumeRolePolicyDocument":{"Statement":[{"Principal":"*"}]}},
-  {"RoleName":"suspicious","AssumeRolePolicyDocument":{"Statement":[{"Principal":"arn:aws:iam::123456789012:role/unknown"}]}}
+  {"RoleName":"source","RolePolicyList":[{"PolicyDocument":{"Statement":[{"Effect":"Allow","Action":"iam:PassRole","Resource":"arn:aws:iam::999999999999:role/missing"}]}}]},
+  {"RoleName":"open","AssumeRolePolicyDocument":{"Statement":[{"Effect":"Allow","Action":"sts:AssumeRole","Principal":"*"}]}},
+  {"RoleName":"suspicious","Arn":"arn:aws:iam::999999999999:role/suspicious","AssumeRolePolicyDocument":{"Statement":[{"Effect":"Allow","Action":"sts:AssumeRole","Principal":{"AWS":"arn:aws:iam::123456789012:role/unknown"}}]}}
 ]}`
 }
 
@@ -509,6 +707,12 @@ func captureStdout(t *testing.T, fn func()) string {
 		t.Fatalf("pipe stdout: %v", err)
 	}
 	os.Stdout = writer
+	output := make(chan string, 1)
+	go func() {
+		var buffer bytes.Buffer
+		_, _ = io.Copy(&buffer, reader)
+		output <- buffer.String()
+	}()
 
 	fn()
 
@@ -517,9 +721,5 @@ func captureStdout(t *testing.T, fn func()) string {
 	}
 	os.Stdout = originalStdout
 
-	var buffer bytes.Buffer
-	if _, err := io.Copy(&buffer, reader); err != nil {
-		t.Fatalf("read stdout: %v", err)
-	}
-	return buffer.String()
+	return <-output
 }

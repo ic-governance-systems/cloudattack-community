@@ -7,6 +7,7 @@
           "PolicyDocument": {
             "Statement": [
               {
+                "Effect": "Allow",
                 "Action": "iam:PassRole",
                 "Resource": "arn:aws:iam::000000000000:role/lambda-role"
               }
@@ -24,7 +25,9 @@
       "AssumeRolePolicyDocument": {
         "Statement": [
           {
-            "Principal": "arn:aws:iam::123456789012:root"
+            "Effect": "Allow",
+            "Action": "sts:AssumeRole",
+            "Principal": {"AWS":"arn:aws:iam::123456789012:root"}
           }
         ]
       }

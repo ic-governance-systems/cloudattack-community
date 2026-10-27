@@ -4,7 +4,7 @@
     {
       "address": "aws_iam_role.open",
       "type": "aws_iam_role",
-      "change": {"actions": ["create"], "after": {"name": "open-role", "assume_role_policy": "{\"Statement\":[{\"Principal\":\"*\"}] }"}, "after_unknown": {}}
+      "change": {"actions": ["create"], "after": {"name": "open-role", "assume_role_policy": "{\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"sts:AssumeRole\",\"Principal\":\"*\"}] }"}, "after_unknown": {}}
     },
     {
       "address": "aws_iam_role.source",
@@ -14,12 +14,12 @@
     {
       "address": "aws_iam_role_policy.source",
       "type": "aws_iam_role_policy",
-      "change": {"actions": ["create"], "after": {"role": "source-role", "policy": "{\"Statement\":[{\"Action\":\"iam:PassRole\",\"Resource\":\"*\"}]}"}, "after_unknown": {}}
+      "change": {"actions": ["create"], "after": {"role": "source-role", "policy": "{\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"iam:PassRole\",\"Resource\":\"*\"}]}"}, "after_unknown": {}}
     },
     {
       "address": "aws_iam_role.external",
       "type": "aws_iam_role",
-      "change": {"actions": ["create"], "after": {"name": "external-role", "arn": "arn:aws:iam::999999999999:role/external-role", "assume_role_policy": "{\"Statement\":[{\"Principal\":\"arn:aws:iam::123456789012:root\"}]}"}, "after_unknown": {}}
+      "change": {"actions": ["create"], "after": {"name": "external-role", "arn": "arn:aws:iam::999999999999:role/external-role", "assume_role_policy": "{\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"sts:AssumeRole\",\"Principal\":\"arn:aws:iam::123456789012:root\"}]}"}, "after_unknown": {}}
     }
   ]
 }

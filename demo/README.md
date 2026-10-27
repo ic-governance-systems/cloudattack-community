@@ -25,7 +25,7 @@ Expected result: no findings reach the `high` threshold and the command exits wi
 
 ## Scenario 2 - PassRole Risk
 
-[`vulnerable-passrole/main.tf`](vulnerable-passrole/main.tf) gives `developer-role` an inline policy allowing `iam:PassRole` on a role ARN in dummy account `000000000000`. A role that can pass another role is security-sensitive because it may enable privilege escalation into a higher-privilege role. CloudAttack detects the supported relationship; it does not claim to prove that an exploit will succeed.
+[`vulnerable-passrole/main.tf`](vulnerable-passrole/main.tf) gives `developer-role` an inline policy allowing `iam:PassRole` on a role ARN in dummy account `000000000000`. CloudAttack reports the supported permission pattern as potential risk; it does not prove that a service handoff or exploit will succeed.
 
 ```bash
 cloudattack scan \

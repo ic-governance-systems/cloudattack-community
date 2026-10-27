@@ -31,10 +31,9 @@ func RunAnalysis(roles []models.Role) []models.Finding {
 	for _, f := range collected {
 		// suppress PassRole if a chain exists for same source->target
 		if f.Title == "PassRole Risk Detected" {
-			// Issue is like "Can pass role <target>"
-			parts := strings.SplitN(f.Issue, " ", 4)
-			if len(parts) >= 4 {
-				target := parts[3]
+			const prefix = "Role may pass iam:PassRole permission to "
+			if strings.HasPrefix(f.Issue, prefix) {
+				target := strings.TrimPrefix(f.Issue, prefix)
 				key := f.Role + "->" + target
 				if _, ok := chainSet[key]; ok {
 					continue
@@ -43,6 +42,9 @@ func RunAnalysis(roles []models.Role) []models.Finding {
 		}
 		pathKey := strings.Join(f.Path, "->")
 		key := f.Title + "|" + f.Role + "|" + f.Issue + "|" + pathKey
+		if f.MatchKey != "" {
+			key += "|" + f.MatchKey
+		}
 		if key == "|||" {
 			continue
 		}

@@ -20,8 +20,13 @@ type SARIFReport struct {
 }
 
 type SARIFRun struct {
-	Tool    SARIFTool     `json:"tool"`
-	Results []SARIFResult `json:"results"`
+	Tool       SARIFTool           `json:"tool"`
+	Results    []SARIFResult       `json:"results"`
+	Properties *SARIFRunProperties `json:"properties,omitempty"`
+}
+
+type SARIFRunProperties struct {
+	CloudAttackProvenance *models.ScanProvenance `json:"cloudattackProvenance,omitempty"`
 }
 
 type SARIFTool struct {
@@ -47,10 +52,11 @@ type SARIFRuleConfiguration struct {
 }
 
 type SARIFResult struct {
-	RuleID     string          `json:"ruleId"`
-	Level      string          `json:"level"`
-	Message    SARIFMessage    `json:"message"`
-	Properties SARIFProperties `json:"properties"`
+	RuleID              string            `json:"ruleId"`
+	Level               string            `json:"level"`
+	Message             SARIFMessage      `json:"message"`
+	PartialFingerprints map[string]string `json:"partialFingerprints,omitempty"`
+	Properties          SARIFProperties   `json:"properties"`
 }
 
 type SARIFMessage struct {
@@ -58,8 +64,20 @@ type SARIFMessage struct {
 }
 
 type SARIFProperties struct {
-	CloudAttackSeverity string   `json:"cloudattackSeverity"`
-	CloudAttackPath     []string `json:"cloudattackPath,omitempty"`
+	CloudAttackSeverity                string                  `json:"cloudattackSeverity"`
+	CloudAttackPath                    []string                `json:"cloudattackPath,omitempty"`
+	CloudAttackLimitations             []string                `json:"cloudattackLimitations,omitempty"`
+	CloudAttackResourceAddress         string                  `json:"cloudattackResourceAddress,omitempty"`
+	CloudAttackRoleAddress             string                  `json:"cloudattackRoleAddress,omitempty"`
+	CloudAttackRelatedAddresses        []string                `json:"cloudattackRelatedAddresses,omitempty"`
+	CloudAttackStatementIndex          *int                    `json:"cloudattackStatementIndex,omitempty"`
+	CloudAttackChangeClassification    string                  `json:"cloudattackChangeClassification,omitempty"`
+	CloudAttackChangeSummary           string                  `json:"cloudattackChangeSummary,omitempty"`
+	CloudAttackFindingID               string                  `json:"cloudattackFindingId,omitempty"`
+	CloudAttackIdentityStatus          string                  `json:"cloudattackIdentityStatus,omitempty"`
+	CloudAttackPreviousResourceAddress string                  `json:"cloudattackPreviousResourceAddress,omitempty"`
+	CloudAttackRemediation             string                  `json:"cloudattackRemediation,omitempty"`
+	CloudAttackEvidence                *models.FindingEvidence `json:"cloudattackEvidence,omitempty"`
 }
 
 // ToSARIF converts internal findings into a deterministic SARIF 2.1.0 report.
@@ -76,7 +94,10 @@ func ToSARIF(report models.Report) (string, error) {
 
 	rulesByID := make(map[string]SARIFRule)
 	for _, finding := range report.Findings {
-		ruleID := stableFindingID(finding.Title)
+		ruleID := finding.RuleID
+		if ruleID == "" {
+			ruleID = stableFindingID(finding.Title)
+		}
 		if _, exists := rulesByID[ruleID]; !exists {
 			rulesByID[ruleID] = SARIFRule{
 				ID:               ruleID,
@@ -92,7 +113,21 @@ func ToSARIF(report models.Report) (string, error) {
 		if len(finding.Path) > 0 {
 			properties.CloudAttackPath = append([]string{}, finding.Path...)
 		}
-		run.Results = append(run.Results, SARIFResult{
+		if len(finding.Limitations) > 0 {
+			properties.CloudAttackLimitations = append([]string{}, finding.Limitations...)
+		}
+		properties.CloudAttackResourceAddress = finding.ResourceAddress
+		properties.CloudAttackRoleAddress = finding.RoleAddress
+		properties.CloudAttackRelatedAddresses = append([]string{}, finding.RelatedAddresses...)
+		properties.CloudAttackStatementIndex = finding.StatementIndex
+		properties.CloudAttackChangeClassification = string(finding.ChangeClassification)
+		properties.CloudAttackChangeSummary = finding.ChangeSummary
+		properties.CloudAttackFindingID = finding.FindingID
+		properties.CloudAttackIdentityStatus = finding.IdentityStatus
+		properties.CloudAttackPreviousResourceAddress = finding.PreviousResourceAddress
+		properties.CloudAttackRemediation = finding.Remediation
+		properties.CloudAttackEvidence = findingEvidencePtr(finding.Evidence)
+		result := SARIFResult{
 			RuleID: ruleID,
 			Level:  sarifLevel(finding.Severity),
 			Message: SARIFMessage{Text: fmt.Sprintf(
@@ -100,7 +135,14 @@ func ToSARIF(report models.Report) (string, error) {
 				finding.Title, finding.Issue, finding.Impact, finding.Role,
 			)},
 			Properties: properties,
-		})
+		}
+		if finding.FindingID != "" && finding.IdentityStatus == "stable" {
+			result.PartialFingerprints = map[string]string{"cloudattack/finding-v1": finding.FindingID}
+		}
+		run.Results = append(run.Results, result)
+	}
+	if report.Provenance != nil {
+		run.Properties = &SARIFRunProperties{CloudAttackProvenance: report.Provenance}
 	}
 
 	ruleIDs := make([]string, 0, len(rulesByID))

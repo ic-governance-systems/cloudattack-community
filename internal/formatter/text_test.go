@@ -10,12 +10,13 @@ import (
 func TestToTextAlwaysPrintsPathAndSummary(t *testing.T) {
 	report := FromFindings([]models.Finding{
 		{
-			Severity: "HIGH",
-			Title:    "External Account Trust Relationship",
-			Role:     "developer-role",
-			Issue:    "External AWS account 123456789012 can assume this role via root trust",
-			Impact:   "External AWS account can assume this role and inherit its permissions",
-			Path:     []string{"developer-role", "123456789012:root"},
+			Severity:    "HIGH",
+			Title:       "External Account Trust Relationship",
+			Role:        "developer-role",
+			Issue:       "External AWS account 123456789012 can assume this role via root trust",
+			Impact:      "External AWS account can assume this role and inherit its permissions",
+			Path:        []string{"developer-role", "123456789012:root"},
+			Limitations: []string{"IAM conditions were not evaluated."},
 		},
 		{
 			Severity: "CRITICAL",
@@ -35,5 +36,8 @@ func TestToTextAlwaysPrintsPathAndSummary(t *testing.T) {
 	}
 	if !strings.Contains(output, "Summary:\n  2 issues found") {
 		t.Fatalf("expected dynamic summary, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Limitations:\n  - IAM conditions were not evaluated.") {
+		t.Fatalf("expected limitations to be rendered, got:\n%s", output)
 	}
 }

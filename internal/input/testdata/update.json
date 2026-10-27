@@ -7,7 +7,7 @@
       "change": {
         "actions": ["update"],
         "before": {"name": "updated-role", "assume_role_policy": "{\"Statement\":[]}"},
-        "after": {"name": "updated-role", "assume_role_policy": "{\"Statement\":[{\"Principal\":\"*\"}]}"},
+        "after": {"name": "updated-role", "assume_role_policy": "{\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"sts:AssumeRole\",\"Principal\":\"*\"}]}"},
         "after_unknown": {}
       }
     }

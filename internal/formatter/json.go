@@ -10,11 +10,12 @@ import (
 
 // JSONReport is the versioned public machine-readable scan contract.
 type JSONReport struct {
-	SchemaVersion string        `json:"schema_version"`
-	Tool          JSONTool      `json:"tool"`
-	Scan          JSONScan      `json:"scan"`
-	Summary       JSONSummary   `json:"summary"`
-	Findings      []JSONFinding `json:"findings"`
+	SchemaVersion string                 `json:"schema_version"`
+	Tool          JSONTool               `json:"tool"`
+	Scan          JSONScan               `json:"scan"`
+	Provenance    *models.ScanProvenance `json:"provenance,omitempty"`
+	Summary       JSONSummary            `json:"summary"`
+	Findings      []JSONFinding          `json:"findings"`
 }
 
 type JSONTool struct {
@@ -36,13 +37,26 @@ type JSONSummary struct {
 }
 
 type JSONFinding struct {
-	ID       string   `json:"id"`
-	Severity string   `json:"severity"`
-	Title    string   `json:"title"`
-	Role     string   `json:"role"`
-	Issue    string   `json:"issue"`
-	Impact   string   `json:"impact"`
-	Path     []string `json:"path"`
+	ID                      string                  `json:"id"`
+	Severity                string                  `json:"severity"`
+	Title                   string                  `json:"title"`
+	Role                    string                  `json:"role"`
+	Issue                   string                  `json:"issue"`
+	Impact                  string                  `json:"impact"`
+	Path                    []string                `json:"path"`
+	Limitations             []string                `json:"limitations,omitempty"`
+	RuleID                  string                  `json:"rule_id,omitempty"`
+	ResourceAddress         string                  `json:"resource_address,omitempty"`
+	RoleAddress             string                  `json:"role_address,omitempty"`
+	RelatedAddresses        []string                `json:"related_addresses,omitempty"`
+	StatementIndex          *int                    `json:"statement_index,omitempty"`
+	ChangeClassification    string                  `json:"change_classification,omitempty"`
+	ChangeSummary           string                  `json:"change_summary,omitempty"`
+	FindingID               string                  `json:"finding_id,omitempty"`
+	IdentityStatus          string                  `json:"identity_status,omitempty"`
+	PreviousResourceAddress string                  `json:"previous_resource_address,omitempty"`
+	Remediation             string                  `json:"remediation,omitempty"`
+	Evidence                *models.FindingEvidence `json:"evidence,omitempty"`
 }
 
 // ToJSON converts internal findings into the stable public JSON contract.
@@ -52,15 +66,16 @@ func ToJSON(report models.Report) (string, error) {
 		sourceType = "aws-iam-json"
 	}
 	output := JSONReport{
-		SchemaVersion: "1.0",
+		SchemaVersion: "1.1",
 		Tool: JSONTool{
 			Name:    "cloudattack",
 			Edition: "community",
 			Version: version.Current,
 		},
-		Scan:     JSONScan{SourceType: sourceType},
-		Summary:  JSONSummary{},
-		Findings: make([]JSONFinding, 0, len(report.Findings)),
+		Scan:       JSONScan{SourceType: sourceType},
+		Provenance: report.Provenance,
+		Summary:    JSONSummary{},
+		Findings:   make([]JSONFinding, 0, len(report.Findings)),
 	}
 
 	for _, finding := range report.Findings {
@@ -80,14 +95,31 @@ func ToJSON(report models.Report) (string, error) {
 		if path == nil {
 			path = []string{}
 		}
+		ruleID := finding.RuleID
+		if ruleID == "" {
+			ruleID = stableFindingID(finding.Title)
+		}
 		output.Findings = append(output.Findings, JSONFinding{
-			ID:       stableFindingID(finding.Title),
-			Severity: finding.Severity,
-			Title:    finding.Title,
-			Role:     finding.Role,
-			Issue:    finding.Issue,
-			Impact:   finding.Impact,
-			Path:     path,
+			ID:                      ruleID, // Retained as the legacy rule-ID field.
+			Severity:                finding.Severity,
+			Title:                   finding.Title,
+			Role:                    finding.Role,
+			Issue:                   finding.Issue,
+			Impact:                  finding.Impact,
+			Path:                    path,
+			Limitations:             finding.Limitations,
+			RuleID:                  finding.RuleID,
+			ResourceAddress:         finding.ResourceAddress,
+			RoleAddress:             finding.RoleAddress,
+			RelatedAddresses:        finding.RelatedAddresses,
+			StatementIndex:          finding.StatementIndex,
+			ChangeClassification:    string(finding.ChangeClassification),
+			ChangeSummary:           finding.ChangeSummary,
+			FindingID:               finding.FindingID,
+			IdentityStatus:          finding.IdentityStatus,
+			PreviousResourceAddress: finding.PreviousResourceAddress,
+			Remediation:             finding.Remediation,
+			Evidence:                findingEvidencePtr(finding.Evidence),
 		})
 	}
 
@@ -102,12 +134,18 @@ func stableFindingID(title string) string {
 	switch title {
 	case "PassRole Risk Detected":
 		return "passrole-risk"
+	case "Conditional PassRole Permission Requires Review":
+		return "conditional-passrole-review"
 	case "External Account Trust Relationship":
 		return "external-account-trust"
 	case "Overly Permissive Trust Policy":
 		return "overly-permissive-trust"
 	case "Privilege Escalation Path Detected":
 		return "simple-privilege-escalation"
+	case "Potential PassRole Trust Relationship":
+		return "potential-passrole-trust-relationship"
+	case "External AWS Principal Trust Relationship":
+		return "external-aws-principal-trust"
 	case "Suspicious Trust Relationship":
 		return "suspicious-trust-relationship"
 	default:

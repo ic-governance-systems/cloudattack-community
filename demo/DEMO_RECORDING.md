@@ -24,7 +24,7 @@ Say: "The planned IAM state passes the high-severity gate."
 
 Open `demo/vulnerable-passrole/main.tf` and highlight only the `iam:PassRole` action and the dummy role ARN.
 
-Say: "This developer role can pass another role. CloudAttack identifies that supported privilege-escalation pattern."
+Say: "This developer role has an Allow statement matching PassRole. CloudAttack reports it as a potential identity-risk pattern."
 
 ## Scene 4 - Failed security gate (8 seconds)
 
@@ -58,7 +58,7 @@ Briefly show the SARIF `version` of `2.1.0` and the `passrole-risk` rule. The co
 
 Optionally open `demo/vulnerable-trust/main.tf` and point to `Principal = "*"`, then show the README GitHub Actions snippet.
 
-Say: "The same gate also detects an overly permissive trust policy. The README shows how to run the check in GitHub Actions before deployment."
+Say: "The same gate also detects an overly broad trust principal. The README shows how to run the check in GitHub Actions before deployment."
 
 ## Accuracy notes
 

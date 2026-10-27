@@ -19,10 +19,10 @@ func TestParseIAMAcceptsSupportedInputAndUnknownFields(t *testing.T) {
     "RoleName": "developer-role",
     "Arn": "arn:aws:iam::123456789012:role/developer-role",
     "RolePolicyList": [{
-      "PolicyDocument": {"Statement": [{"Action": "iam:PassRole", "Resource": "*"}]},
+      "PolicyDocument": {"Statement": [{"Effect":"Allow", "Action": "iam:PassRole", "Resource": "*"}]},
       "UnrelatedPolicyMetadata": true
     }],
-    "AssumeRolePolicyDocument": {"Statement": [{"Principal": "*"}]},
+    "AssumeRolePolicyDocument": {"Statement": [{"Effect":"Allow", "Action":"sts:AssumeRole", "Principal": "*"}]},
     "UnrelatedRoleMetadata": "allowed"
   }]
 }`)
@@ -33,6 +33,27 @@ func TestParseIAMAcceptsSupportedInputAndUnknownFields(t *testing.T) {
 	}
 	if len(roles) != 1 || roles[0].Name != "developer-role" {
 		t.Fatalf("unexpected parsed roles: %#v", roles)
+	}
+	if len(roles[0].Policies) != 1 || roles[0].Policies[0].Effect != "Allow" || roles[0].Policies[0].Actions[0] != "iam:PassRole" || roles[0].Policies[0].Resources[0] != "*" {
+		t.Fatalf("policy statement context was not preserved: %#v", roles[0].Policies)
+	}
+	if len(roles[0].Trust) != 1 || roles[0].Trust[0].Effect != "Allow" || roles[0].Trust[0].Principals[0].Type != "*" {
+		t.Fatalf("trust statement context was not preserved: %#v", roles[0].Trust)
+	}
+}
+
+func TestParseIAMPreservesConditionsAndPrincipalCategories(t *testing.T) {
+	data := []byte(`{"RoleDetailList":[{"RoleName":"role","Arn":"arn:aws:iam::999999999999:role/role","RolePolicyList":[{"PolicyDocument":{"Statement":[{"Effect":"Allow","Action":"iam:PassRole","Resource":"arn:aws:iam::123456789012:role/*","Condition":{"StringEquals":{"iam:PassedToService":"lambda.amazonaws.com"}}}]}}],"AssumeRolePolicyDocument":{"Statement":[{"Effect":"Allow","Action":"sts:AssumeRole","Principal":{"AWS":"arn:aws:iam::123456789012:role/ci","Service":"lambda.amazonaws.com","Federated":"example-provider"}}]}}]}`)
+	roles, err := ParseIAM(data)
+	if err != nil {
+		t.Fatalf("parse IAM context: %v", err)
+	}
+	policy := roles[0].Policies[0]
+	if policy.Condition["StringEquals"]["iam:PassedToService"] != "lambda.amazonaws.com" {
+		t.Fatalf("condition was not preserved: %#v", policy.Condition)
+	}
+	if len(roles[0].Trust[0].Principals) != 3 {
+		t.Fatalf("expected principal categories to be preserved, got %#v", roles[0].Trust[0].Principals)
 	}
 }
 
@@ -45,8 +66,15 @@ func TestParseIAMRejectsInvalidStructures(t *testing.T) {
 		{name: "role wrong type", data: `{"RoleDetailList": ["role"]}`},
 		{name: "policy list wrong type", data: `{"RoleDetailList":[{"RoleName":"role","RolePolicyList":{}}]}`},
 		{name: "statement wrong type", data: `{"RoleDetailList":[{"RoleName":"role","AssumeRolePolicyDocument":{"Statement":"bad"}}]}`},
-		{name: "principal wrong type", data: `{"RoleDetailList":[{"RoleName":"role","AssumeRolePolicyDocument":{"Statement":[{"Principal":false}]}}]}`},
-		{name: "action item wrong type", data: `{"RoleDetailList":[{"RoleName":"role","RolePolicyList":[{"PolicyDocument":{"Statement":[{"Action":["iam:PassRole",false]}]}}]}]}`},
+		{name: "principal wrong type", data: `{"RoleDetailList":[{"RoleName":"role","AssumeRolePolicyDocument":{"Statement":[{"Effect":"Allow","Action":"sts:AssumeRole","Principal":false}]}}]}`},
+		{name: "action item wrong type", data: `{"RoleDetailList":[{"RoleName":"role","RolePolicyList":[{"PolicyDocument":{"Statement":[{"Effect":"Allow","Action":["iam:PassRole",false],"Resource":"*"}]}}]}]}`},
+		{name: "missing effect", data: `{"RoleDetailList":[{"RoleName":"role","RolePolicyList":[{"PolicyDocument":{"Statement":[{"Action":"iam:PassRole","Resource":"*"}]}}]}]}`},
+		{name: "unsupported NotAction", data: `{"RoleDetailList":[{"RoleName":"role","RolePolicyList":[{"PolicyDocument":{"Statement":[{"Effect":"Allow","NotAction":"iam:PassRole","Resource":"*"}]}}]}]}`},
+		{name: "unsupported NotResource", data: `{"RoleDetailList":[{"RoleName":"role","RolePolicyList":[{"PolicyDocument":{"Statement":[{"Effect":"Allow","Action":"iam:PassRole","NotResource":"arn:aws:iam::*:role/blocked"}]}}]}]}`},
+		{name: "unsupported NotPrincipal", data: `{"RoleDetailList":[{"RoleName":"role","AssumeRolePolicyDocument":{"Statement":[{"Effect":"Allow","Action":"sts:AssumeRole","NotPrincipal":"*"}]}}]}`},
+		{name: "malformed condition", data: `{"RoleDetailList":[{"RoleName":"role","RolePolicyList":[{"PolicyDocument":{"Statement":[{"Effect":"Allow","Action":"iam:PassRole","Resource":"*","Condition":[]}]}}]}]}`},
+		{name: "empty action", data: `{"RoleDetailList":[{"RoleName":"role","RolePolicyList":[{"PolicyDocument":{"Statement":[{"Effect":"Allow","Action":"","Resource":"*"}]}}]}]}`},
+		{name: "empty principal", data: `{"RoleDetailList":[{"RoleName":"role","AssumeRolePolicyDocument":{"Statement":[{"Effect":"Allow","Action":"sts:AssumeRole","Principal":""}]}}]}`},
 		{name: "malformed encoded policy document", data: `{"RoleDetailList":[{"RoleName":"role","RolePolicyList":[{"PolicyDocument":"{bad"}]}]}`},
 		{name: "unsupported object", data: `{"notIAM": true}`},
 	}

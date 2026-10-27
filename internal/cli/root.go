@@ -30,7 +30,7 @@ func printHelp() {
 	fmt.Println("Usage:")
 	fmt.Println("  cloudattack scan --input <file>")
 	fmt.Println("  cloudattack scan --terraform-plan <file>")
-	fmt.Println("  cloudattack scan --input <file> [--format text|json|sarif] [--fail-on <severity>]")
+	fmt.Println("  cloudattack scan --input <file> [--format text|json|sarif] [--fail-on <severity>] [provenance flags]")
 	fmt.Println("  cloudattack version")
 	fmt.Println()
 }

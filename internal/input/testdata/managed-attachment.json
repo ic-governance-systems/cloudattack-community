@@ -9,7 +9,7 @@
     {
       "address": "aws_iam_policy.passrole",
       "type": "aws_iam_policy",
-      "change": {"actions": ["create"], "after": {"arn": "arn:aws:iam::999999999999:policy/passrole", "policy": "{\"Statement\":[{\"Action\":\"iam:PassRole\",\"Resource\":\"*\"}]}"}, "after_unknown": {}}
+      "change": {"actions": ["create"], "after": {"arn": "arn:aws:iam::999999999999:policy/passrole", "policy": "{\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"iam:PassRole\",\"Resource\":\"*\"}]}"}, "after_unknown": {}}
     },
     {
       "address": "aws_iam_role_policy_attachment.managed",

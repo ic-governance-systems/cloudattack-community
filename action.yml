@@ -1,5 +1,5 @@
 name: CloudAttack Community
-description: Find risky AWS IAM relationships and privilege-escalation patterns in a Terraform plan
+description: Find potential AWS IAM identity-risk patterns in a Terraform plan
 
 inputs:
   terraform-plan:
@@ -13,6 +13,21 @@ inputs:
     description: Report format written to the workspace (text, json, or sarif)
     required: false
     default: sarif
+  scan-id:
+    description: Optional caller-supplied identifier for this scan execution
+    required: false
+  repository:
+    description: Optional repository identifier to include in scan provenance
+    required: false
+  commit-sha:
+    description: Optional commit SHA to include in scan provenance
+    required: false
+  git-ref:
+    description: Optional Git reference to include in scan provenance
+    required: false
+  pull-request:
+    description: Optional pull request number to include in scan provenance
+    required: false
 
 outputs:
   report-file:
@@ -39,6 +54,11 @@ runs:
         PLAN_PATH: ${{ inputs.terraform-plan }}
         FAIL_ON: ${{ inputs.fail-on }}
         FORMAT: ${{ inputs.format }}
+        SCAN_ID: ${{ inputs.scan-id }}
+        REPOSITORY: ${{ inputs.repository }}
+        COMMIT_SHA: ${{ inputs.commit-sha }}
+        GIT_REF: ${{ inputs.git-ref }}
+        PULL_REQUEST: ${{ inputs.pull-request }}
       run: |
         set -u
         case "$FORMAT" in
@@ -49,10 +69,17 @@ runs:
         esac
 
         set +e
+        provenance_args=()
+        [[ -n "$SCAN_ID" ]] && provenance_args+=(--scan-id "$SCAN_ID")
+        [[ -n "$REPOSITORY" ]] && provenance_args+=(--repository "$REPOSITORY")
+        [[ -n "$COMMIT_SHA" ]] && provenance_args+=(--commit-sha "$COMMIT_SHA")
+        [[ -n "$GIT_REF" ]] && provenance_args+=(--git-ref "$GIT_REF")
+        [[ -n "$PULL_REQUEST" ]] && provenance_args+=(--pull-request "$PULL_REQUEST")
         "$RUNNER_TEMP/cloudattack-community" scan \
           --terraform-plan "$PLAN_PATH" \
           --format "$FORMAT" \
-          --fail-on "$FAIL_ON" > "$report_file"
+          --fail-on "$FAIL_ON" \
+          "${provenance_args[@]}" > "$report_file"
         status=$?
         echo "report_file=$report_file" >> "$GITHUB_OUTPUT"
         echo "exit_code=$status" >> "$GITHUB_OUTPUT"
